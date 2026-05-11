@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-background: #F8F8FF;
+  --color-card: #FFFFFF;
+  --color-navy: #1A1A2E;
+  --color-border: #E5E7EB;
+  --color-gray: #6B7280;
+}
+
+@layer base {
+  body {
+    @apply font-dm bg-background text-navy;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-syne font-bold;
+  }
+}
+
+.logo-badge {
+  @apply bg-primary text-white font-bold flex items-center justify-center rounded-[10px];
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media print {
+  body * { visibility: hidden; }
+  #printable-receipt, #printable-receipt * { visibility: visible; }
+  #printable-receipt {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    background: white !important;
+    color: black !important;
+  }
+  .no-print { display: none !important; }
+}
