@@ -9,7 +9,7 @@ import { useAuthStore } from '../store/authStore'
 import { useAuditStore } from '../store/auditStore'
 import { useNotificationsStore } from '../store/notificationsStore'
 import { useSettingsStore } from '../store/settingsStore'
-import { formatNaira } from '../lib/utils'
+import { formatNaira, getErrorMessage } from '../lib/utils'
 import {
   Plus, Search, X, Trash2, CheckCircle2, Printer,
   ArrowLeft, ArrowRight, Eye, Edit, Receipt,
@@ -248,8 +248,8 @@ export const Orders: React.FC = () => {
         setStep(3)
         toast.success('Order confirmed!')
       }
-    } catch {
-      toast.error(isEditingFullOrder ? 'Failed to update order' : 'Failed to create order')
+    } catch (err) {
+      toast.error(getErrorMessage(err, isEditingFullOrder ? 'Failed to update order.' : 'Failed to create order.'))
     }
   }
 
@@ -262,8 +262,8 @@ export const Orders: React.FC = () => {
       toast.success('Device returned and stock restored')
       setIsRefundModalOpen(false)
       setIsDetailModalOpen(false)
-    } catch {
-      toast.error('Failed to process return')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to process return.'))
     }
   }
 

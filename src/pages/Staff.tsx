@@ -4,7 +4,7 @@ import { DataTable } from '../components/shared/DataTable'
 import { StatusBadge } from '../components/shared/StatusBadge'
 import { FAB } from '../components/shared/FAB'
 import { useStaff } from '../hooks/useStaff'
-import { getInitials } from '../lib/utils'
+import { getInitials, getErrorMessage } from '../lib/utils'
 import {
   Search,
   X,
@@ -164,8 +164,7 @@ export const Staff: React.FC = () => {
       }
       closePortal()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Something went wrong'
-      toast.error(msg)
+      toast.error(getErrorMessage(err, editingStaff ? 'Failed to update staff member.' : 'Failed to add staff member.'))
     }
   }
 
@@ -255,8 +254,7 @@ export const Staff: React.FC = () => {
                     toast.success(`${deletingStaff.fullName} has been deleted`)
                     setDeletingStaff(null)
                   } catch (err) {
-                    const msg = err instanceof Error ? err.message : 'Failed to delete staff member'
-                    toast.error(msg)
+                    toast.error(getErrorMessage(err, 'Failed to delete staff member.'))
                   }
                 }}
                 className="flex-1 h-11 bg-red-600 text-white rounded-xl font-bold text-[14px] hover:bg-red-700 transition-colors"

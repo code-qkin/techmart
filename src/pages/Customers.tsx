@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { useCustomers } from '../hooks/useCustomers'
-import { formatNaira } from '../lib/utils'
-import { cn } from '../lib/utils'
+import { formatNaira, getErrorMessage, cn } from '../lib/utils'
 import {
   Users, Plus, Search, X, Phone, Mail, ShoppingBag,
   TrendingUp, Star, Edit, ChevronDown
@@ -74,8 +73,8 @@ export const Customers: React.FC = () => {
         toast.success('Customer added')
       }
       setIsModalOpen(false)
-    } catch {
-      toast.error('Something went wrong')
+    } catch (err) {
+      toast.error(getErrorMessage(err, editingCustomer ? 'Failed to update customer.' : 'Failed to add customer.'))
     }
   }
 

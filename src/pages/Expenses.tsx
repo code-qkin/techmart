@@ -4,8 +4,7 @@ import { useExpenses } from '../hooks/useExpenses'
 import { useOrders } from '../hooks/useOrders'
 import { useAuthStore } from '../store/authStore'
 import { useAuditStore } from '../store/auditStore'
-import { formatNaira } from '../lib/utils'
-import { cn } from '../lib/utils'
+import { formatNaira, getErrorMessage, cn } from '../lib/utils'
 import { usePrivacyStore, maskAmount } from '../store/privacyStore'
 import {
   Plus, X, Trash2, TrendingUp, TrendingDown, DollarSign,
@@ -109,8 +108,8 @@ export const Expenses: React.FC = () => {
       toast.success('Expense recorded')
       setIsModalOpen(false)
       setForm({ category: 'Rent', description: '', amount: '', date: new Date().toISOString().slice(0, 10) })
-    } catch {
-      toast.error('Failed to record expense')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to record expense.'))
     }
   }
 
@@ -119,8 +118,8 @@ export const Expenses: React.FC = () => {
     try {
       await deleteExpense(id)
       toast.success('Expense deleted')
-    } catch {
-      toast.error('Failed to delete expense')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete expense.'))
     }
   }
 

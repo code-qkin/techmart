@@ -18,14 +18,18 @@ export const Login: React.FC = () => {
     e.preventDefault()
     setIsLoading(true)
 
-    const success = await login(email, password)
+    try {
+      const success = await login(email, password)
 
-    if (success) {
-      const user = useAuthStore.getState().user
-      toast.success(`Welcome back, ${user?.name}!`)
-      navigate(user?.role === 'secretary' ? '/orders' : '/dashboard')
-    } else {
-      toast.error('Invalid email or password')
+      if (success) {
+        const user = useAuthStore.getState().user
+        toast.success(`Welcome back, ${user?.name}!`)
+        navigate(user?.role === 'secretary' ? '/orders' : '/dashboard')
+      } else {
+        toast.error('Incorrect email or password. Please try again.')
+      }
+    } catch {
+      toast.error('Unable to sign in. Please check your connection and try again.')
     }
 
     setIsLoading(false)

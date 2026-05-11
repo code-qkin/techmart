@@ -3,7 +3,7 @@ import { PageHeader } from '../components/shared/PageHeader'
 import { DataTable } from '../components/shared/DataTable'
 import { FAB } from '../components/shared/FAB'
 import { useProducts } from '../hooks/useProducts'
-import { formatNaira } from '../lib/utils'
+import { formatNaira, getErrorMessage } from '../lib/utils'
 import { 
   Plus, 
   Search, 
@@ -187,8 +187,8 @@ export const Products: React.FC = () => {
         toast.success("New item added to catalog")
       }
       closePortal()
-    } catch {
-      toast.error("Action failed")
+    } catch (err) {
+      toast.error(getErrorMessage(err, editingProduct ? 'Failed to update product.' : 'Failed to add product.'))
     }
   }
 
@@ -207,8 +207,8 @@ export const Products: React.FC = () => {
     try {
       await deleteProduct(id)
       toast.success("Product removed")
-    } catch {
-      toast.error("Action failed")
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to remove product.'))
     }
   }
 
