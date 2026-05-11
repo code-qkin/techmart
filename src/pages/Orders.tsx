@@ -253,20 +253,6 @@ export const Orders: React.FC = () => {
     }
   }
 
-  const handleRefund = async () => {
-    if (!selectedOrder) return
-    try {
-      await updateOrder({ ...selectedOrder, status: 'Refunded', paymentStatus: 'Unpaid' })
-      addLog({ userId: user?.id || '', userName: user?.name || '', userRole: user?.role || '', action: 'REFUND', entity: 'Order', entityId: selectedOrder.id, details: `Order ${selectedOrder.id} refunded – ${formatNaira(selectedOrder.totalAmount)}` })
-      addNotification({ type: 'refund', title: 'Refund Processed', message: `Order ${selectedOrder.id} has been refunded`, link: '/orders' })
-      toast.success('Refund processed successfully')
-      setIsRefundModalOpen(false)
-      setIsDetailModalOpen(false)
-    } catch {
-      toast.error('Failed to process refund')
-    }
-  }
-
   const handleReturn = async () => {
     if (!selectedOrder) return
     try {

@@ -16,14 +16,6 @@ import {
 
 type DateFilter = 'today' | 'week' | 'month' | 'all' | 'custom'
 
-const DATE_FILTER_LABELS: Record<DateFilter, string> = {
-  today: 'Today',
-  week: 'This Week',
-  month: 'This Month',
-  all: 'All Time',
-  custom: 'Custom Range',
-}
-
 const PIE_COLORS = ['#E63946', '#3B82F6', '#F59E0B', '#10B981']
 
 export const Reports: React.FC = () => {
