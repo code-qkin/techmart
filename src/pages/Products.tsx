@@ -65,6 +65,8 @@ export const Products: React.FC = () => {
   const [selectedStorages, setSelectedStorages] = useState<string[]>([])
   const [selectedRAMs, setSelectedRAMs] = useState<string[]>([])
   const [selectedConditions, setSelectedConditions] = useState<ProductVariant['condition'][]>(['New'])
+  const [showManualAdd, setShowManualAdd] = useState(false)
+  const [manualForm, setManualForm] = useState<{ color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ color: '', storage: '', ram: '', condition: 'New' })
 
   const categories = ['All', 'Phones', 'Laptops', 'Tablets', 'Accessories']
   const colorOptions = ['Black', 'White', 'Silver', 'Gold', 'Graphite', 'Blue', 'Green', 'Red', 'Grey', 'Midnight', 'Starlight', 'Natural Titanium']
@@ -108,43 +110,56 @@ export const Products: React.FC = () => {
     setSelectedStorages([])
     setSelectedRAMs([])
     setSelectedConditions(['New'])
+    setShowManualAdd(false)
+    setManualForm({ color: '', storage: '', ram: '', condition: 'New' })
     setActiveTab('general')
   }
 
+  const variantKey = (v: { color?: string; storage?: string; ram?: string; condition: string }) =>
+    [v.color, v.storage, v.ram, v.condition].map(x => x ?? '').join('|')
+
   const generateVariants = () => {
     const newVariants: ProductVariant[] = []
-    
+
     selectedConditions.forEach(condition => {
       if (selectedColors.length === 0 && selectedStorages.length === 0 && selectedRAMs.length === 0) {
-        newVariants.push({
-          id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-          condition,
-          stock: 0
-        })
+        newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, condition, stock: 0 })
         return
       }
-
       const colors = selectedColors.length > 0 ? selectedColors : [undefined]
       const storages = selectedStorages.length > 0 ? selectedStorages : [undefined]
       const rams = selectedRAMs.length > 0 ? selectedRAMs : [undefined]
-
       colors.forEach(color => {
         storages.forEach(storage => {
           rams.forEach(ram => {
-            newVariants.push({
-              id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-              color,
-              storage,
-              ram,
-              condition,
-              stock: 0
-            })
+            newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, color, storage, ram, condition, stock: 0 })
           })
         })
       })
     })
 
-    setProductVariants(newVariants)
+    // Additive merge — preserve existing variants, only append new combos
+    setProductVariants(prev => {
+      const existingKeys = new Set(prev.map(variantKey))
+      const toAdd = newVariants.filter(v => !existingKeys.has(variantKey(v)))
+      return [...prev, ...toAdd]
+    })
+  }
+
+  const addManualVariant = () => {
+    setProductVariants(prev => [
+      ...prev,
+      {
+        id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        color: manualForm.color.trim() || undefined,
+        storage: manualForm.storage.trim() || undefined,
+        ram: manualForm.ram.trim() || undefined,
+        condition: manualForm.condition,
+        stock: 0,
+      }
+    ])
+    setManualForm({ color: '', storage: '', ram: '', condition: 'New' })
+    setShowManualAdd(false)
   }
 
   const updateVariant = (index: number, field: keyof ProductVariant, value: string | number) => {
@@ -492,7 +507,17 @@ export const Products: React.FC = () => {
                     </div>
 
                     <div className="space-y-4">
-                      <h3 className="text-[12px] font-bold text-navy uppercase tracking-widest">Configured Configurations ({productVariants.length})</h3>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[12px] font-bold text-navy uppercase tracking-widest">Configured Variants ({productVariants.length})</h3>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualAdd(true)}
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:underline"
+                        >
+                          <Plus size={13} /> Add Variant
+                        </button>
+                      </div>
+
                       <div className="space-y-2">
                         {productVariants.map((v, i) => (
                           <div key={i} className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl shadow-sm hover:border-primary/30 transition-all group">
@@ -518,6 +543,74 @@ export const Products: React.FC = () => {
                           </div>
                         ))}
                       </div>
+
+                      {/* Manual Add Variant Form */}
+                      {showManualAdd && (
+                        <div className="p-5 bg-primary/[0.03] border border-dashed border-primary/30 rounded-xl space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <p className="text-[11px] font-bold text-primary uppercase tracking-widest">New Variant</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-gray uppercase">Color</label>
+                              <input
+                                list="manual-colors"
+                                placeholder="e.g. Black"
+                                value={manualForm.color}
+                                onChange={e => setManualForm(p => ({ ...p, color: e.target.value }))}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                              />
+                              <datalist id="manual-colors">{colorOptions.map(c => <option key={c} value={c} />)}</datalist>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-gray uppercase">Storage</label>
+                              <input
+                                list="manual-storage"
+                                placeholder="e.g. 256GB"
+                                value={manualForm.storage}
+                                onChange={e => setManualForm(p => ({ ...p, storage: e.target.value }))}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                              />
+                              <datalist id="manual-storage">{storageOptions.map(s => <option key={s} value={s} />)}</datalist>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-gray uppercase">RAM</label>
+                              <input
+                                list="manual-ram"
+                                placeholder="e.g. 8GB"
+                                value={manualForm.ram}
+                                onChange={e => setManualForm(p => ({ ...p, ram: e.target.value }))}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                              />
+                              <datalist id="manual-ram">{ramOptions.map(r => <option key={r} value={r} />)}</datalist>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-gray uppercase">Condition</label>
+                              <select
+                                value={manualForm.condition}
+                                onChange={e => setManualForm(p => ({ ...p, condition: e.target.value as ProductVariant['condition'] }))}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                              >
+                                {conditionOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={addManualVariant}
+                              className="flex-1 h-9 bg-primary text-white rounded-lg font-bold text-[13px] hover:bg-primary-dark transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setShowManualAdd(false); setManualForm({ color: '', storage: '', ram: '', condition: 'New' }) }}
+                              className="flex-1 h-9 border border-border rounded-lg font-bold text-[13px] hover:bg-gray-50 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
