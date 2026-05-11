@@ -66,7 +66,7 @@ export const Products: React.FC = () => {
   const [selectedRAMs, setSelectedRAMs] = useState<string[]>([])
   const [selectedConditions, setSelectedConditions] = useState<ProductVariant['condition'][]>(['New'])
   const [showManualAdd, setShowManualAdd] = useState(false)
-  const [manualForm, setManualForm] = useState<{ color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ color: '', storage: '', ram: '', condition: 'New' })
+  const [manualForm, setManualForm] = useState<{ label: string; color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ label: '', color: '', storage: '', ram: '', condition: 'New' })
 
   const categories = ['All', 'Phones', 'Laptops', 'Tablets', 'Accessories']
   const colorOptions = ['Black', 'White', 'Silver', 'Gold', 'Graphite', 'Blue', 'Green', 'Red', 'Grey', 'Midnight', 'Starlight', 'Natural Titanium']
@@ -111,12 +111,12 @@ export const Products: React.FC = () => {
     setSelectedRAMs([])
     setSelectedConditions(['New'])
     setShowManualAdd(false)
-    setManualForm({ color: '', storage: '', ram: '', condition: 'New' })
+    setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' })
     setActiveTab('general')
   }
 
-  const variantKey = (v: { color?: string; storage?: string; ram?: string; condition: string }) =>
-    [v.color, v.storage, v.ram, v.condition].map(x => x ?? '').join('|')
+  const variantKey = (v: { label?: string; color?: string; storage?: string; ram?: string; condition: string }) =>
+    [v.label, v.color, v.storage, v.ram, v.condition].map(x => x ?? '').join('|')
 
   const generateVariants = () => {
     const newVariants: ProductVariant[] = []
@@ -147,18 +147,26 @@ export const Products: React.FC = () => {
   }
 
   const addManualVariant = () => {
+    const label = manualForm.label.trim()
+    const color = manualForm.color.trim()
+    const storage = manualForm.storage.trim()
+    const ram = manualForm.ram.trim()
+    if (!label && !color && !storage && !ram) {
+      return // need at least one field
+    }
     setProductVariants(prev => [
       ...prev,
       {
         id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        color: manualForm.color.trim() || undefined,
-        storage: manualForm.storage.trim() || undefined,
-        ram: manualForm.ram.trim() || undefined,
+        label: label || undefined,
+        color: color || undefined,
+        storage: storage || undefined,
+        ram: ram || undefined,
         condition: manualForm.condition,
         stock: 0,
       }
     ])
-    setManualForm({ color: '', storage: '', ram: '', condition: 'New' })
+    setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' })
     setShowManualAdd(false)
   }
 
@@ -525,7 +533,7 @@ export const Products: React.FC = () => {
                               <div className="col-span-1">
                                 <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Variant</span>
                                 <span className="text-[12px] font-bold text-navy line-clamp-1">
-                                  {[v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' ')}
+                                  {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' ')}
                                 </span>
                               </div>
                               <div>
@@ -547,7 +555,28 @@ export const Products: React.FC = () => {
                       {/* Manual Add Variant Form */}
                       {showManualAdd && (
                         <div className="p-5 bg-primary/[0.03] border border-dashed border-primary/30 rounded-xl space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                          <p className="text-[11px] font-bold text-primary uppercase tracking-widest">New Variant</p>
+                          <div>
+                            <p className="text-[11px] font-bold text-primary uppercase tracking-widest">New Variant</p>
+                            <p className="text-[11px] text-gray mt-0.5">Use a custom label for non-standard types (e.g. Privacy, Type-C, Large)</p>
+                          </div>
+
+                          {/* Custom Label — shown prominently; replaces standard fields when filled */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray uppercase">Custom Label <span className="normal-case font-normal">(overrides fields below)</span></label>
+                            <input
+                              placeholder="e.g. Privacy, Non-Privacy, Wireless, Type-C…"
+                              value={manualForm.label}
+                              onChange={e => setManualForm(p => ({ ...p, label: e.target.value }))}
+                              className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 h-px bg-border" />
+                            <span className="text-[10px] font-bold text-gray uppercase tracking-widest">or use standard fields</span>
+                            <div className="flex-1 h-px bg-border" />
+                          </div>
+
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
                               <label className="text-[10px] font-bold text-gray uppercase">Color</label>
@@ -556,7 +585,8 @@ export const Products: React.FC = () => {
                                 placeholder="e.g. Black"
                                 value={manualForm.color}
                                 onChange={e => setManualForm(p => ({ ...p, color: e.target.value }))}
-                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                                disabled={!!manualForm.label}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white disabled:bg-gray-50 disabled:text-gray-400"
                               />
                               <datalist id="manual-colors">{colorOptions.map(c => <option key={c} value={c} />)}</datalist>
                             </div>
@@ -567,7 +597,8 @@ export const Products: React.FC = () => {
                                 placeholder="e.g. 256GB"
                                 value={manualForm.storage}
                                 onChange={e => setManualForm(p => ({ ...p, storage: e.target.value }))}
-                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                                disabled={!!manualForm.label}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white disabled:bg-gray-50 disabled:text-gray-400"
                               />
                               <datalist id="manual-storage">{storageOptions.map(s => <option key={s} value={s} />)}</datalist>
                             </div>
@@ -578,7 +609,8 @@ export const Products: React.FC = () => {
                                 placeholder="e.g. 8GB"
                                 value={manualForm.ram}
                                 onChange={e => setManualForm(p => ({ ...p, ram: e.target.value }))}
-                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                                disabled={!!manualForm.label}
+                                className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white disabled:bg-gray-50 disabled:text-gray-400"
                               />
                               <datalist id="manual-ram">{ramOptions.map(r => <option key={r} value={r} />)}</datalist>
                             </div>
@@ -603,7 +635,7 @@ export const Products: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => { setShowManualAdd(false); setManualForm({ color: '', storage: '', ram: '', condition: 'New' }) }}
+                              onClick={() => { setShowManualAdd(false); setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' }) }}
                               className="flex-1 h-9 border border-border rounded-lg font-bold text-[13px] hover:bg-gray-50 transition-colors"
                             >
                               Cancel

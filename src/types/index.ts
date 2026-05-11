@@ -1,5 +1,6 @@
 export interface ProductVariant {
   id: string // SKU
+  label?: string  // free-form label for custom variant types (e.g. "Privacy", "Type-C")
   color?: string
   storage?: string
   ram?: string

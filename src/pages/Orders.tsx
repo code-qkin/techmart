@@ -200,7 +200,7 @@ export const Orders: React.FC = () => {
       customerPhone,
       items: cart.map((item) => ({
         productId: item.product.id,
-        productName: item.product.name + (item.variant ? ` (${[item.variant.color, item.variant.storage, item.variant.condition].filter(Boolean).join(' ')})` : ''),
+        productName: item.product.name + (item.variant ? ` (${item.variant.label || [item.variant.color, item.variant.storage, item.variant.condition].filter(Boolean).join(' ')})` : ''),
         quantity: item.quantity,
         unitPrice: item.variant?.price || item.product.price,
         subtotal: (item.variant?.price || item.product.price) * item.quantity,
@@ -456,7 +456,7 @@ export const Orders: React.FC = () => {
                           className={cn('w-full py-3.5 px-4 rounded-xl border transition-all flex items-center justify-between text-left', isOut ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:border-primary hover:bg-primary/5')}
                         >
                           <div>
-                            <span className="text-[13px] font-bold text-navy block">{[v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}</span>
+                            <span className="text-[13px] font-bold text-navy block">{v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}</span>
                             <span className={cn('text-[10px] font-bold uppercase', v.stock < 5 ? 'text-amber-500' : 'text-green-600')}>
                               {v.stock} in stock {v.price ? `• ${formatNaira(v.price)}` : ''}
                             </span>
@@ -542,7 +542,7 @@ export const Orders: React.FC = () => {
                           <div key={idx} className="flex items-center justify-between py-2">
                             <div className="flex flex-col">
                               <span className="text-[14px] font-bold text-navy leading-tight">{item.product.name}</span>
-                              <span className="text-[11px] text-gray font-medium mt-0.5">{[item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}</span>
+                              <span className="text-[11px] text-gray font-medium mt-0.5">{item.variant?.label || [item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}</span>
                             </div>
                             <div className="flex items-center gap-8">
                               <div className="text-[13px] font-bold text-navy w-24 text-right">{formatNaira((item.variant?.price || item.product.price) * item.quantity)}</div>
@@ -581,7 +581,7 @@ export const Orders: React.FC = () => {
                             <td className="py-5">
                               <div className="flex flex-col">
                                 <span className="text-[15px] font-bold text-navy">{item.product.name}</span>
-                                <span className="text-[12px] text-gray mt-0.5">{[item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}</span>
+                                <span className="text-[12px] text-gray mt-0.5">{item.variant?.label || [item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}</span>
                               </div>
                             </td>
                             <td className="py-5 text-center text-[14px] text-navy font-medium">{item.quantity}</td>
