@@ -12,7 +12,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      storeName: 'TechMart Lagos',
+      storeName: 'TechMart',
       address: '15 Broad Street, Lagos Island, Lagos',
       phone: '+234 801 234 5678',
       email: 'info@techmart.ng',
