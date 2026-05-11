@@ -11,13 +11,15 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { getErrorMessage } from '../lib/utils'
 
 export const Settings: React.FC = () => {
-  const { user } = useAuthStore()
+  const { user, updateProfile } = useAuthStore()
   const isSecretary = user?.role === 'secretary'
   const { storeName, address, phone, email, setStoreInfo } = useSettingsStore()
   const [storeForm, setStoreForm] = useState({ storeName, address, phone, email })
-  
+  const [profileName, setProfileName] = useState(user?.name ?? '')
+
   const [notifications, setNotifications] = useState({
     lowStock: true,
     newOrder: true,
@@ -40,9 +42,15 @@ export const Settings: React.FC = () => {
     toast.success("Security credentials updated successfully")
   }
 
-  const handleUpdateProfile = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
-    toast.success("Profile information updated")
+    if (!profileName.trim()) { toast.error('Name cannot be empty.'); return }
+    try {
+      await updateProfile(profileName.trim())
+      toast.success('Profile updated successfully')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update profile.'))
+    }
   }
 
   return (
@@ -65,7 +73,11 @@ export const Settings: React.FC = () => {
           <form onSubmit={handleUpdateProfile} className="p-6 space-y-5">
             <div className="space-y-1.5">
               <label className="text-[13px] font-bold text-navy">Full Name</label>
-              <input defaultValue={user?.name} className="w-full h-10 px-3 border border-border rounded-md text-[14px] focus:border-primary outline-none" />
+              <input
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                className="w-full h-10 px-3 border border-border rounded-md text-[14px] focus:border-primary outline-none"
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-[13px] font-bold text-navy">Email Address</label>

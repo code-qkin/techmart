@@ -14,6 +14,7 @@ interface AuthState {
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<boolean>
   logout: () => Promise<void>
+  updateProfile: (name: string) => Promise<void>
 }
 
 const toUser = (authEmail: string, profile: { id: string; name: string; role: string }): User => ({
@@ -61,5 +62,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     await supabase.auth.signOut()
     set({ user: null })
+  },
+
+  updateProfile: async (name: string) => {
+    const { user } = useAuthStore.getState()
+    if (!user) return
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name })
+      .eq('id', user.id)
+    if (error) throw error
+    set({ user: { ...user, name } })
   },
 }))
