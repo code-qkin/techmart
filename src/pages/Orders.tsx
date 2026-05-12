@@ -18,7 +18,8 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
-import type { Order, Product, ProductVariant, CartItem, Customer, VariantUnit } from '../types'
+import type { Order, Product, ProductVariant, CartItem, Customer, VariantUnit, Batch } from '../types'
+import { useBatches } from '../hooks/useBatches'
 import { toast } from 'sonner'
 
 const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
@@ -38,6 +39,7 @@ const getCategoryIcon = (category: string, name: string = '', size: number = 24)
 export const Orders: React.FC = () => {
   const { orders, isLoading, addOrder, updateOrder, returnOrder } = useOrders()
   const { products } = useProducts()
+  const { batches } = useBatches()
   const { customers, updateCustomer } = useCustomers()
   const { user } = useAuthStore()
   const { addLog } = useAuditStore()
@@ -62,6 +64,7 @@ export const Orders: React.FC = () => {
   const [newOrderCategory, setNewOrderCategory] = useState('All')
   const [selectingVariantFor, setSelectingVariantFor] = useState<Product | null>(null)
   const [selectingImeiFor, setSelectingImeiFor] = useState<{ product: Product; variant: ProductVariant } | null>(null)
+  const [selectingBatchFor, setSelectingBatchFor] = useState<{ product: Product; variant?: ProductVariant } | null>(null)
   const [imeiPickerInput, setImeiPickerInput] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -93,8 +96,10 @@ export const Orders: React.FC = () => {
     })
   }, [orders, filter, dateFilter, customFrom, customTo])
 
+  const getItemPrice = (item: CartItem) => item.batchSellPrice || item.variant?.price || item.product.price
+
   const subtotal = useMemo(() =>
-    cart.reduce((sum, item) => sum + ((item.variant?.price || item.product.price) * item.quantity), 0),
+    cart.reduce((sum, item) => sum + (getItemPrice(item) * item.quantity), 0),
     [cart]
   )
 
@@ -129,11 +134,13 @@ export const Orders: React.FC = () => {
     [productSearch, newOrderCategory, products]
   )
 
-  const addToCart = (product: Product, variant?: ProductVariant, unit?: VariantUnit) => {
+  const getAvailableBatches = (productId: string, variantId?: string) =>
+    batches.filter(b => b.productId === productId && b.variantId === variantId && b.quantityRemaining > 0)
+
+  const addToCart = (product: Product, variant?: ProductVariant, unit?: VariantUnit, batch?: Batch | null) => {
     if (product.variants && product.variants.length > 0) {
       if (!variant) { setSelectingVariantFor(product); return }
       if (variant.stock <= 0) { toast.error('This variant is out of stock'); return }
-      // If variant has tracked units with IMEIs and none was picked yet, open IMEI picker
       const availableUnits = variant.units?.filter(u => u.imei) || []
       if (availableUnits.length > 0 && !unit) {
         setSelectingImeiFor({ product, variant })
@@ -141,20 +148,43 @@ export const Orders: React.FC = () => {
         setSelectingVariantFor(null)
         return
       }
+      // Batch picker for non-IMEI variants (batch === undefined means not yet checked)
+      if (!unit && batch === undefined) {
+        const availableBatches = getAvailableBatches(product.id, variant.id)
+        if (availableBatches.length > 0) {
+          setSelectingBatchFor({ product, variant })
+          setSelectingVariantFor(null)
+          return
+        }
+      }
       const existing = cart.find((i) => i.product.id === product.id && i.variant?.id === variant.id)
       if (existing && existing.quantity >= variant.stock) { toast.error(`Only ${variant.stock} units available`); return }
-    } else if (product.stock <= 0) {
-      toast.error(`${product.name} is out of stock`); return
+    } else {
+      if (product.stock <= 0) { toast.error(`${product.name} is out of stock`); return }
+      // Batch picker for simple products
+      if (batch === undefined) {
+        const availableBatches = getAvailableBatches(product.id, undefined)
+        if (availableBatches.length > 0) {
+          setSelectingBatchFor({ product, variant: undefined })
+          return
+        }
+      }
     }
     const existing = cart.find((i) => i.product.id === product.id && i.variant?.id === variant?.id)
-    if (existing && !unit) {
+    if (existing && !unit && !batch) {
       setCart(cart.map((i) => (i.product.id === product.id && i.variant?.id === variant?.id) ? { ...i, quantity: i.quantity + 1 } : i))
     } else {
-      setCart([...cart, { product, quantity: 1, variant, unit }])
+      setCart([...cart, {
+        product, quantity: 1, variant, unit,
+        batchId: batch?.id,
+        batchCostPrice: batch?.costPrice,
+        batchSellPrice: batch?.sellPrice,
+      }])
     }
     setProductSearch('')
     setSelectingVariantFor(null)
     setSelectingImeiFor(null)
+    setSelectingBatchFor(null)
     setImeiPickerInput('')
   }
 
@@ -210,20 +240,24 @@ export const Orders: React.FC = () => {
       staffName: user?.name || 'Unknown',
       customerName,
       customerPhone,
-      items: cart.map((item) => ({
-        productId: item.product.id,
-        productName: item.product.name + (item.variant ? ` (${item.variant.label || [item.variant.color, item.variant.storage, item.variant.condition].filter(Boolean).join(' ')})` : ''),
-        quantity: item.quantity,
-        unitPrice: item.variant?.price || item.product.price,
-        subtotal: (item.variant?.price || item.product.price) * item.quantity,
-        color: item.variant?.color,
-        storage: item.variant?.storage,
-        condition: item.variant?.condition,
-        variantId: item.variant?.id,
-        costPrice: item.variant?.costPrice ?? item.product.costPrice,
-        imei: item.unit?.imei,
-        supplier: item.unit?.supplier,
-      })),
+      items: cart.map((item) => {
+        const unitPrice = getItemPrice(item)
+        return {
+          productId: item.product.id,
+          productName: item.product.name + (item.variant ? ` (${item.variant.label || [item.variant.color, item.variant.storage, item.variant.condition].filter(Boolean).join(' ')})` : ''),
+          quantity: item.quantity,
+          unitPrice,
+          subtotal: unitPrice * item.quantity,
+          color: item.variant?.color,
+          storage: item.variant?.storage,
+          condition: item.variant?.condition,
+          variantId: item.variant?.id,
+          costPrice: item.batchCostPrice ?? item.variant?.costPrice ?? item.product.costPrice,
+          imei: item.unit?.imei,
+          supplier: item.unit?.supplier,
+          batchId: item.batchId,
+        }
+      }),
       subtotal,
       taxAmount: 0,
       discountAmount,
@@ -290,6 +324,7 @@ export const Orders: React.FC = () => {
     setProductSearch('')
     setNewOrderCategory('All')
     setSelectingVariantFor(null)
+    setSelectingBatchFor(null)
     setCustomerName('')
     setCustomerPhone('')
     setShowCustomerDrop(false)
@@ -548,6 +583,60 @@ export const Orders: React.FC = () => {
               </div>
             )}
 
+            {/* Batch Picker */}
+            {selectingBatchFor && (
+              <div className="absolute inset-0 z-[110] flex items-center justify-center p-6">
+                <div className="absolute inset-0 bg-navy/30 backdrop-blur-[4px]" onClick={() => setSelectingBatchFor(null)} />
+                <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-[440px] animate-in zoom-in-95 duration-200 border border-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-[16px] font-bold text-navy">Select Batch</h3>
+                      <p className="text-[11px] text-gray">
+                        {selectingBatchFor.product.name}
+                        {selectingBatchFor.variant && ` — ${selectingBatchFor.variant.label || [selectingBatchFor.variant.color, selectingBatchFor.variant.storage].filter(Boolean).join(' ')}`}
+                      </p>
+                    </div>
+                    <button onClick={() => setSelectingBatchFor(null)} className="p-1.5 text-gray hover:bg-gray-100 rounded-full"><X size={18} /></button>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar">
+                    {getAvailableBatches(selectingBatchFor.product.id, selectingBatchFor.variant?.id).map((b) => (
+                      <button
+                        key={b.id}
+                        onClick={() => addToCart(selectingBatchFor.product, selectingBatchFor.variant, undefined, b)}
+                        className="w-full flex items-center justify-between px-4 py-3 border border-border rounded-xl hover:border-primary hover:bg-primary/5 transition-all text-left"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {b.supplier && <span className="text-[12px] font-bold text-navy">{b.supplier}</span>}
+                            <span className="text-[10px] text-gray font-medium">{new Date(b.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-[11px] font-bold text-orange-600">Cost: {formatNaira(b.costPrice)}</span>
+                            {b.sellPrice && <span className="text-[11px] font-bold text-primary">Sell: {formatNaira(b.sellPrice)}</span>}
+                            {b.notes && <span className="text-[10px] text-gray/60 italic">{b.notes}</span>}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 ml-3">
+                          <span className="text-[13px] font-bold text-navy block">{b.quantityRemaining} left</span>
+                          <ArrowRight size={14} className="text-primary ml-auto" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pt-3 border-t border-border mt-3">
+                    <button
+                      onClick={() => addToCart(selectingBatchFor.product, selectingBatchFor.variant, undefined, null)}
+                      className="w-full py-2.5 text-[12px] font-bold text-gray hover:text-navy border border-dashed border-border rounded-xl hover:border-gray-400 transition-colors"
+                    >
+                      Skip batch tracking
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-3">
@@ -623,10 +712,11 @@ export const Orders: React.FC = () => {
                               <span className="text-[11px] text-gray font-medium mt-0.5">
                                 {item.variant?.label || [item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}
                                 {item.unit?.imei && <span className="ml-1 font-mono text-[10px] text-gray/70">· {item.unit.imei}</span>}
+                                {item.batchId && <span className="ml-1 text-[10px] font-bold text-orange-500">· Batch</span>}
                               </span>
                             </div>
                             <div className="flex items-center gap-8">
-                              <div className="text-[13px] font-bold text-navy w-24 text-right">{formatNaira((item.variant?.price || item.product.price) * item.quantity)}</div>
+                              <div className="text-[13px] font-bold text-navy w-24 text-right">{formatNaira(getItemPrice(item) * item.quantity)}</div>
                               <div className="flex items-center border border-border rounded-lg h-8">
                                 <button onClick={() => updateCartQty(item.product.id, item.variant?.id, -1)} className="w-8 h-full flex items-center justify-center text-gray border-r border-border">-</button>
                                 <span className="w-8 text-center text-[13px] font-bold text-navy">{item.quantity}</span>
@@ -669,7 +759,7 @@ export const Orders: React.FC = () => {
                               </div>
                             </td>
                             <td className="py-5 text-center text-[14px] text-navy font-medium">{item.quantity}</td>
-                            <td className="py-5 text-right text-[14px] font-bold text-navy">{formatNaira((item.variant?.price || item.product.price) * item.quantity)}</td>
+                            <td className="py-5 text-right text-[14px] font-bold text-navy">{formatNaira(getItemPrice(item) * item.quantity)}</td>
                           </tr>
                         ))}
                       </tbody>

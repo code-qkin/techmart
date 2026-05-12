@@ -16,6 +16,20 @@ export interface ProductVariant {
   units?: VariantUnit[]  // per-unit IMEI + supplier tracking
 }
 
+export interface Batch {
+  id: string
+  productId: string
+  variantId?: string
+  supplier?: string
+  quantityReceived: number
+  quantityRemaining: number
+  costPrice: number
+  sellPrice?: number
+  receivedAt: string
+  notes?: string
+  createdAt: string
+}
+
 export interface Product {
   id: string
   name: string
@@ -47,6 +61,7 @@ export interface OrderItem {
   variantId?: string
   imei?: string
   supplier?: string
+  batchId?: string
 }
 
 export interface Installment {
@@ -94,6 +109,9 @@ export interface CartItem {
   quantity: number
   variant?: ProductVariant
   unit?: VariantUnit
+  batchId?: string
+  batchCostPrice?: number
+  batchSellPrice?: number
 }
 
 export type StockStatus = 'in' | 'low' | 'out'

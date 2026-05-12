@@ -110,12 +110,25 @@ export const useOrders = () => {
         }
       }
 
+      // Deduct from batch if applicable
+      for (const item of newOrder.items) {
+        if (item.batchId) {
+          const { data: b } = await supabase.from('batches').select('quantity_remaining').eq('id', item.batchId).single()
+          if (b) {
+            await supabase.from('batches')
+              .update({ quantity_remaining: Math.max(0, (b as Record<string, unknown>).quantity_remaining as number - item.quantity) })
+              .eq('id', item.batchId)
+          }
+        }
+      }
+
       return toOrder(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['batches'] })
     },
   })
 
@@ -167,12 +180,26 @@ export const useOrders = () => {
         }
       }
 
+      // Restore batch quantity on return
+      for (const item of order.items) {
+        if (item.batchId) {
+          const { data: b } = await supabase.from('batches').select('quantity_remaining, quantity_received').eq('id', item.batchId).single()
+          if (b) {
+            const bd = b as Record<string, unknown>
+            await supabase.from('batches')
+              .update({ quantity_remaining: Math.min(bd.quantity_received as number, (bd.quantity_remaining as number) + item.quantity) })
+              .eq('id', item.batchId)
+          }
+        }
+      }
+
       return toOrder(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['batches'] })
     },
   })
 

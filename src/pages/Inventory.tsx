@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
+import { useBatches } from '../hooks/useBatches'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant, VariantUnit } from '../types'
@@ -59,11 +60,23 @@ export const Inventory: React.FC = () => {
   const { updateProduct } = useProducts()
   const { isHidden, toggle } = usePrivacyStore()
   const { suppliers, addSupplier } = useSuppliers()
+  const { receiveBatch } = useBatches()
   const [newSupplierInput, setNewSupplierInput] = useState('')
   const [filter, setFilter] = useState('All Items')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedRows, setExpandedRows] = useState<string[]>([])
-  
+
+  // Receive stock modal state
+  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false)
+  const [receivingProduct, setReceivingProduct] = useState<Product | null>(null)
+  const [receivingVariant, setReceivingVariant] = useState<ProductVariant | null>(null)
+  const [receiveQty, setReceiveQty] = useState('1')
+  const [receiveCostPrice, setReceiveCostPrice] = useState('')
+  const [receiveSellPrice, setReceiveSellPrice] = useState('')
+  const [receiveSupplier, setReceiveSupplier] = useState('')
+  const [receiveNotes, setReceiveNotes] = useState('')
+  const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0])
+
   // State for editing from inventory
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -73,6 +86,39 @@ export const Inventory: React.FC = () => {
     setExpandedRows(prev => 
       prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]
     )
+  }
+
+  const openReceiveModal = (product: Product, variant?: ProductVariant) => {
+    setReceivingProduct(product)
+    setReceivingVariant(variant || null)
+    setReceiveQty('1')
+    setReceiveCostPrice(variant?.costPrice ? String(variant.costPrice) : product.costPrice ? String(product.costPrice) : '')
+    setReceiveSellPrice(variant?.price ? String(variant.price) : String(product.price))
+    setReceiveSupplier('')
+    setReceiveNotes('')
+    setReceiveDate(new Date().toISOString().split('T')[0])
+    setIsReceiveModalOpen(true)
+  }
+
+  const handleReceiveStock = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!receivingProduct || !receiveQty || !receiveCostPrice) return
+    try {
+      await receiveBatch({
+        productId: receivingProduct.id,
+        variantId: receivingVariant?.id,
+        supplier: receiveSupplier || undefined,
+        quantity: Number(receiveQty),
+        costPrice: Number(receiveCostPrice),
+        sellPrice: Number(receiveSellPrice) || undefined,
+        notes: receiveNotes || undefined,
+        receivedAt: new Date(receiveDate).toISOString(),
+      })
+      toast.success(`${receiveQty} units received into stock`)
+      setIsReceiveModalOpen(false)
+    } catch {
+      toast.error('Failed to receive stock')
+    }
   }
 
   const openEditSheet = (product: Product) => {
@@ -288,18 +334,18 @@ export const Inventory: React.FC = () => {
         <div className="flex items-center gap-2">
           {!row.original.variants?.length && (
             <>
-              <button 
+              <button
                 onClick={() => handleAdjustStock(row.original.id, row.original.stock, -1)}
                 disabled={row.original.stock === 0}
                 className="w-8 h-8 flex items-center justify-center rounded-md border border-border bg-white text-gray hover:text-navy hover:border-navy disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <Minus size={14} />
               </button>
-              <button 
-                onClick={() => handleAdjustStock(row.original.id, row.original.stock, 1)}
-                className="w-8 h-8 flex items-center justify-center rounded-md border border-border bg-white text-gray hover:text-navy hover:border-navy transition-colors"
+              <button
+                onClick={() => openReceiveModal(row.original)}
+                className="h-8 px-2.5 flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary hover:text-white font-bold text-[11px] transition-colors"
               >
-                <Plus size={14} />
+                <Plus size={12} /> Receive
               </button>
             </>
           )}
@@ -453,6 +499,12 @@ export const Inventory: React.FC = () => {
                           <span className="text-[13px] font-bold text-navy block">{v.stock} units</span>
                           {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
                         </div>
+                        <button
+                          onClick={() => openReceiveModal(row.original, v)}
+                          className="px-2 py-1 text-primary hover:bg-primary hover:text-white opacity-0 group-hover:opacity-100 transition-all bg-primary/5 rounded text-[10px] font-bold border border-primary/20"
+                        >
+                          + Receive
+                        </button>
                         <button onClick={() => openEditSheet(row.original)} className="p-1.5 text-gray hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-50 rounded">
                           <Edit size={12} />
                         </button>
@@ -477,6 +529,71 @@ export const Inventory: React.FC = () => {
           expandedRows={expandedRows}
         />
       </div>
+
+      {/* Receive Stock Modal */}
+      {isReceiveModalOpen && receivingProduct && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setIsReceiveModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] animate-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="h-1 w-full bg-primary" />
+            <form onSubmit={handleReceiveStock} className="p-7 space-y-5">
+              <div>
+                <h3 className="text-[17px] font-bold text-navy">Receive Stock</h3>
+                <p className="text-[12px] text-gray mt-0.5">
+                  {receivingProduct.name}
+                  {receivingVariant && <span className="font-bold text-primary"> — {receivingVariant.label || [receivingVariant.color, receivingVariant.storage, receivingVariant.ram, receivingVariant.condition].filter(Boolean).join(' • ')}</span>}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Quantity *</label>
+                  <input type="number" min={1} required value={receiveQty} onChange={e => setReceiveQty(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
+                  <input type="date" required value={receiveDate} onChange={e => setReceiveDate(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Cost Price (₦) *</label>
+                  <input type="number" min={0} required value={receiveCostPrice} onChange={e => setReceiveCostPrice(e.target.value)} placeholder="What you paid per unit" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Sell Price (₦)</label>
+                  <input type="number" min={0} value={receiveSellPrice} onChange={e => setReceiveSellPrice(e.target.value)} placeholder="Override sell price" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
+                <select value={receiveSupplier} onChange={e => setReceiveSupplier(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
+                  <option value="">Select supplier…</option>
+                  {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes</label>
+                <input value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="e.g. Promo batch, slightly used…" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
+              </div>
+
+              {receiveCostPrice && receiveSellPrice && Number(receiveCostPrice) > 0 && Number(receiveSellPrice) > 0 && (
+                <p className="text-[12px] font-bold text-emerald-600 flex items-center gap-2">
+                  <span className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                    {(((Number(receiveSellPrice) - Number(receiveCostPrice)) / Number(receiveSellPrice)) * 100).toFixed(1)}% margin
+                  </span>
+                  <span className="text-emerald-500 font-medium">{formatNaira(Number(receiveSellPrice) - Number(receiveCostPrice))} profit per unit</span>
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
+                <button type="submit" className="flex-1 h-11 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">Receive {receiveQty} Units</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Edit Product Sheet Overlay */}
       {isEditSheetOpen && editingProduct && (
