@@ -72,6 +72,7 @@ export const Products: React.FC = () => {
   const [showManualAdd, setShowManualAdd] = useState(false)
   const [manualForm, setManualForm] = useState<{ label: string; color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ label: '', color: '', storage: '', ram: '', condition: 'New' })
   const [storagePrices, setStoragePrices] = useState<Record<string, string>>({})
+  const [storageCostPrices, setStorageCostPrices] = useState<Record<string, string>>({})
 
   const categories = ['All', 'Phones', 'Laptops', 'Tablets', 'Accessories']
   const colorOptions = [
@@ -111,10 +112,15 @@ export const Products: React.FC = () => {
     setSelectedRAMs(rams)
     setSelectedConditions(conditions.length > 0 ? conditions : ['New'])
 
-    // Restore storage→price map from existing variants
+    // Restore storage→price and storage→costPrice maps from existing variants
     const prices: Record<string, string> = {}
-    product.variants?.forEach(v => { if (v.storage && v.price) prices[v.storage] = String(v.price) })
+    const costPrices: Record<string, string> = {}
+    product.variants?.forEach(v => {
+      if (v.storage && v.price) prices[v.storage] = String(v.price)
+      if (v.storage && v.costPrice) costPrices[v.storage] = String(v.costPrice)
+    })
     setStoragePrices(prices)
+    setStorageCostPrices(costPrices)
 
     setActiveTab('general')
     setIsAddSheetOpen(true)
@@ -138,6 +144,7 @@ export const Products: React.FC = () => {
     setShowManualAdd(false)
     setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' })
     setStoragePrices({})
+    setStorageCostPrices({})
     setActiveTab('general')
   }
 
@@ -159,7 +166,8 @@ export const Products: React.FC = () => {
         storages.forEach(storage => {
           rams.forEach(ram => {
             const price = storage && storagePrices[storage] ? Number(storagePrices[storage]) : undefined
-            newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, color, storage, ram, condition, stock: 0, price })
+            const costPrice = storage && storageCostPrices[storage] ? Number(storageCostPrices[storage]) : undefined
+            newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, color, storage, ram, condition, stock: 0, price, costPrice })
           })
         })
       })
@@ -547,24 +555,46 @@ export const Products: React.FC = () => {
                               <button key={s} type="button" onClick={() => setSelectedStorages(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} className={cn("px-3 py-1 rounded-lg text-[11px] font-bold border transition-all", selectedStorages.includes(s) ? "bg-primary border-primary text-white" : "bg-white border-border text-gray hover:border-gray-400")}>{s}</button>
                             ))}
                           </div>
-                          {/* Price per storage */}
+                          {/* Sell + Cost price per storage */}
                           {selectedStorages.length > 0 && (
                             <div className="mt-3 space-y-2">
-                              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Set price per storage — auto-fills variants</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                {selectedStorages.map(s => (
-                                  <div key={s} className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 h-9">
-                                    <span className="text-[11px] font-bold text-navy w-12 shrink-0">{s}</span>
-                                    <span className="text-gray text-[12px]">₦</span>
-                                    <input
-                                      type="number"
-                                      placeholder="Price"
-                                      value={storagePrices[s] || ''}
-                                      onChange={e => setStoragePrices(p => ({ ...p, [s]: e.target.value }))}
-                                      className="flex-1 text-[13px] font-bold text-primary outline-none bg-transparent min-w-0"
-                                    />
-                                  </div>
-                                ))}
+                              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Set selling & cost price per storage — auto-fills all variants</p>
+                              <div className="space-y-2">
+                                {selectedStorages.map(s => {
+                                  const sell = Number(storagePrices[s] || 0)
+                                  const cost = Number(storageCostPrices[s] || 0)
+                                  const margin = sell > 0 && cost > 0 ? (((sell - cost) / sell) * 100).toFixed(1) : null
+                                  return (
+                                    <div key={s} className="flex items-center gap-2 bg-white border border-border rounded-xl px-3 py-2">
+                                      <span className="text-[12px] font-bold text-navy w-14 shrink-0">{s}</span>
+                                      <div className="flex items-center gap-1 flex-1 border-r border-border pr-2 mr-1">
+                                        <span className="text-[10px] font-bold text-gray uppercase shrink-0">Sell</span>
+                                        <span className="text-gray text-[12px]">₦</span>
+                                        <input
+                                          type="number"
+                                          placeholder="0"
+                                          value={storagePrices[s] || ''}
+                                          onChange={e => setStoragePrices(p => ({ ...p, [s]: e.target.value }))}
+                                          className="flex-1 text-[13px] font-bold text-primary outline-none bg-transparent min-w-0"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-1 flex-1">
+                                        <span className="text-[10px] font-bold text-gray uppercase shrink-0">Cost</span>
+                                        <span className="text-gray text-[12px]">₦</span>
+                                        <input
+                                          type="number"
+                                          placeholder="0"
+                                          value={storageCostPrices[s] || ''}
+                                          onChange={e => setStorageCostPrices(p => ({ ...p, [s]: e.target.value }))}
+                                          className="flex-1 text-[13px] font-bold text-orange-600 outline-none bg-transparent min-w-0"
+                                        />
+                                      </div>
+                                      {margin && (
+                                        <span className="text-[10px] font-bold text-emerald-600 shrink-0 bg-emerald-50 px-1.5 py-0.5 rounded-md">{margin}%</span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                           )}
@@ -610,7 +640,7 @@ export const Products: React.FC = () => {
                         {productVariants.map((v, i) => (
                           <div key={i} className="bg-white border border-border rounded-xl shadow-sm hover:border-primary/30 transition-all">
                             <div className="flex items-center gap-3 p-4">
-                              <div className="flex-1 grid grid-cols-4 gap-3 items-center">
+                              <div className="flex-1 grid grid-cols-3 gap-4 items-center">
                                 <div className="col-span-1">
                                   <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Variant</span>
                                   <span className="text-[12px] font-bold text-navy line-clamp-1">
@@ -618,16 +648,22 @@ export const Products: React.FC = () => {
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU</span>
-                                  <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[11px] font-mono text-primary bg-transparent focus:underline outline-none" />
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU / ID</span>
+                                  <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[12px] font-mono text-primary bg-transparent focus:underline outline-none" />
                                 </div>
                                 <div>
-                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Sell (₦)</span>
-                                  <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="—" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
-                                </div>
-                                <div>
-                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Cost (₦)</span>
-                                  <input type="number" value={v.costPrice || ''} onChange={(e) => updateVariant(i, 'costPrice', Number(e.target.value))} placeholder="—" className="w-full text-[13px] font-bold text-orange-600 bg-transparent outline-none border-b border-transparent focus:border-orange-400" />
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">
+                                    {v.costPrice ? `Sell / Cost (₦)` : `Price (₦)`}
+                                  </span>
+                                  {v.costPrice ? (
+                                    <span className="text-[12px] font-bold text-navy">
+                                      {formatNaira(v.price || 0)}
+                                      <span className="text-orange-500 ml-1">/ {formatNaira(v.costPrice)}</span>
+                                      {v.price && <span className="text-emerald-600 ml-1 text-[10px]">{(((v.price - v.costPrice) / v.price) * 100).toFixed(0)}%</span>}
+                                    </span>
+                                  ) : (
+                                    <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="Optional" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
