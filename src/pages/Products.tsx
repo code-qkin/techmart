@@ -502,24 +502,21 @@ export const Products: React.FC = () => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Base Selling Price (₦)</label>
+                        <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Selling Price (₦)</label>
                         <input type="number" required value={formPrice} onChange={(e) => setFormPrice(e.target.value)} className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none transition-all" placeholder="0.00" />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Base Cost Price (₦)</label>
-                        <input type="number" min={0} value={formCostPrice} onChange={(e) => setFormCostPrice(e.target.value)} className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none transition-all" placeholder="What you paid" />
-                      </div>
-                      {formCostPrice && formPrice && Number(formCostPrice) > 0 && Number(formPrice) > 0 && (
-                        <div className="space-y-2">
-                          <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Estimated Margin</label>
-                          <div className="h-12 px-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center">
-                            <span className="text-[14px] font-bold text-emerald-700">
-                              {(((Number(formPrice) - Number(formCostPrice)) / Number(formPrice)) * 100).toFixed(1)}%
-                              <span className="text-[12px] font-medium text-emerald-600 ml-2">({formatNaira(Number(formPrice) - Number(formCostPrice))} profit)</span>
+                      <div className="col-span-2 space-y-1.5">
+                        <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Cost Price (₦)</label>
+                        <input type="number" min={0} value={formCostPrice} onChange={(e) => setFormCostPrice(e.target.value)} className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none transition-all" placeholder="What you paid for this product" />
+                        {formCostPrice && formPrice && Number(formCostPrice) > 0 && Number(formPrice) > 0 && (
+                          <p className="text-[12px] font-bold text-emerald-600 flex items-center gap-2 pt-0.5">
+                            <span className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                              {(((Number(formPrice) - Number(formCostPrice)) / Number(formPrice)) * 100).toFixed(1)}% margin
                             </span>
-                          </div>
-                        </div>
-                      )}
+                            <span className="text-emerald-500 font-medium">{formatNaira(Number(formPrice) - Number(formCostPrice))} profit per unit</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">
