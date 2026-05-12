@@ -31,6 +31,7 @@ export interface Product {
   variants?: ProductVariant[]
   supplier?: string
   createdAt: string
+  stockUpdatedAt?: string
 }
 
 export interface OrderItem {

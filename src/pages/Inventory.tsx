@@ -265,6 +265,20 @@ export const Inventory: React.FC = () => {
       )
     },
     {
+      header: 'Last Restocked',
+      cell: ({ row }) => {
+        const d = row.original.stockUpdatedAt
+        if (!d) return <span className="text-[12px] text-gray/40 italic">—</span>
+        const date = new Date(d)
+        return (
+          <div>
+            <p className="text-[13px] font-medium text-navy">{date.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+            <p className="text-[11px] text-gray/60">{date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+        )
+      }
+    },
+    {
       header: 'Status',
       cell: ({ row }) => <StatusBadge status={getStockStatus(row.original.stock, row.original.lowStockThreshold)} />
     },

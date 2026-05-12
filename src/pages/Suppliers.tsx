@@ -1,19 +1,29 @@
 import React, { useState } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { useSuppliers } from '../hooks/useSuppliers'
-import { Plus, Trash2, Truck, Search } from 'lucide-react'
+import { useProducts } from '../hooks/useProducts'
+import { Plus, Trash2, Truck, Search, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '../lib/utils'
 
 export const Suppliers: React.FC = () => {
   const { suppliers, addSupplier, removeSupplier } = useSuppliers()
+  const { products } = useProducts()
   const [newName, setNewName] = useState('')
   const [search, setSearch] = useState('')
   const [deletingName, setDeletingName] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const filtered = suppliers.filter((s) =>
     s.toLowerCase().includes(search.toLowerCase())
   )
+
+  const getSupplierProducts = (name: string) => {
+    return products.filter(p => {
+      if (p.supplier === name) return true
+      return p.variants?.some(v => v.units?.some(u => u.supplier === name))
+    })
+  }
 
   const handleAdd = async () => {
     const name = newName.trim()
@@ -35,6 +45,7 @@ export const Suppliers: React.FC = () => {
     try {
       await removeSupplier(name)
       setDeletingName(null)
+      if (expanded === name) setExpanded(null)
       toast.success(`"${name}" removed`)
     } catch {
       toast.error('Failed to remove supplier')
@@ -97,44 +108,98 @@ export const Suppliers: React.FC = () => {
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {filtered.map((name) => (
-              <li key={name} className="flex items-center justify-between px-6 py-4 group hover:bg-gray-50/60 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Truck size={15} className="text-primary" />
-                  </div>
-                  <span className="text-[14px] font-semibold text-navy">{name}</span>
-                </div>
+            {filtered.map((name) => {
+              const supplierProducts = getSupplierProducts(name)
+              const isExpanded = expanded === name
 
-                {deletingName === name ? (
-                  <div className="flex items-center gap-2 animate-in slide-in-from-right-2 duration-150">
-                    <span className="text-[12px] text-gray">Remove?</span>
+              return (
+                <li key={name} className="group">
+                  {/* Supplier row */}
+                  <div className="flex items-center justify-between px-6 py-4 hover:bg-gray-50/60 transition-colors">
                     <button
-                      onClick={() => handleDelete(name)}
-                      className="px-3 py-1.5 bg-red-500 text-white text-[12px] font-bold rounded-lg hover:bg-red-600 transition-colors"
+                      onClick={() => setExpanded(isExpanded ? null : name)}
+                      className="flex items-center gap-3 flex-1 text-left"
                     >
-                      Yes
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <Truck size={15} className="text-primary" />
+                      </div>
+                      <div>
+                        <span className="text-[14px] font-semibold text-navy">{name}</span>
+                        <span className="ml-2 text-[11px] text-gray/50 font-medium">
+                          {supplierProducts.length === 0
+                            ? 'no products'
+                            : `${supplierProducts.length} product${supplierProducts.length !== 1 ? 's' : ''}`}
+                        </span>
+                      </div>
+                      <span className="text-gray/30 ml-1">
+                        {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                      </span>
                     </button>
-                    <button
-                      onClick={() => setDeletingName(null)}
-                      className="px-3 py-1.5 border border-border text-[12px] font-bold rounded-lg hover:bg-gray-100 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setDeletingName(name)}
-                    className={cn(
-                      'p-2 rounded-lg text-gray/30 hover:text-red-500 hover:bg-red-50 transition-all',
-                      'opacity-0 group-hover:opacity-100'
+
+                    {deletingName === name ? (
+                      <div className="flex items-center gap-2 animate-in slide-in-from-right-2 duration-150">
+                        <span className="text-[12px] text-gray">Remove?</span>
+                        <button
+                          onClick={() => handleDelete(name)}
+                          className="px-3 py-1.5 bg-red-500 text-white text-[12px] font-bold rounded-lg hover:bg-red-600 transition-colors"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => setDeletingName(null)}
+                          className="px-3 py-1.5 border border-border text-[12px] font-bold rounded-lg hover:bg-gray-100 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeletingName(name)}
+                        className={cn(
+                          'p-2 rounded-lg text-gray/30 hover:text-red-500 hover:bg-red-50 transition-all',
+                          'opacity-0 group-hover:opacity-100'
+                        )}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     )}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </li>
-            ))}
+                  </div>
+
+                  {/* Expanded products */}
+                  {isExpanded && (
+                    <div className="bg-gray-50/60 border-t border-border px-6 py-4 animate-in slide-in-from-top-1 duration-150">
+                      {supplierProducts.length === 0 ? (
+                        <div className="flex items-center gap-2 py-3 text-gray/40">
+                          <Package size={15} />
+                          <span className="text-[13px] italic">No products linked to this supplier yet</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-gray uppercase tracking-wider mb-3">Products supplied</p>
+                          {supplierProducts.map(p => (
+                            <div key={p.id} className="flex items-center justify-between bg-white border border-border rounded-xl px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xl">{p.emoji}</span>
+                                <div>
+                                  <p className="text-[13px] font-semibold text-navy">{p.name}</p>
+                                  <p className="text-[11px] text-gray/60">{p.brand} · {p.category}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[13px] font-bold text-navy">{p.stock} units</p>
+                                {p.variants && p.variants.length > 0 && (
+                                  <p className="text-[11px] text-gray/50">{p.variants.length} variants</p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

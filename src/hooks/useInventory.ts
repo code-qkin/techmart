@@ -16,6 +16,7 @@ const toProduct = (row: Record<string, unknown>): Product => ({
   variants: (row.variants as Product['variants']) || [],
   supplier: row.supplier as string | undefined,
   createdAt: row.created_at as string,
+  stockUpdatedAt: row.stock_updated_at as string | undefined,
 })
 
 export const useInventory = () => {
@@ -37,7 +38,7 @@ export const useInventory = () => {
     mutationFn: async ({ productId, newStock }: { productId: string; newStock: number }) => {
       const { data, error } = await supabase
         .from('products')
-        .update({ stock: Math.max(0, newStock) })
+        .update({ stock: Math.max(0, newStock), stock_updated_at: new Date().toISOString() })
         .eq('id', productId)
         .select()
         .single()

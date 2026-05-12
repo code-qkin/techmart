@@ -16,6 +16,7 @@ const toProduct = (row: Record<string, unknown>): Product => ({
   variants: (row.variants as Product['variants']) || [],
   supplier: row.supplier as string | undefined,
   createdAt: row.created_at as string,
+  stockUpdatedAt: row.stock_updated_at as string | undefined,
 })
 
 export const useProducts = () => {
@@ -77,6 +78,7 @@ export const useProducts = () => {
           emoji: updatedProduct.emoji,
           variants: updatedProduct.variants || [],
           supplier: updatedProduct.supplier,
+          stock_updated_at: new Date().toISOString(),
         })
         .eq('id', updatedProduct.id)
         .select()
