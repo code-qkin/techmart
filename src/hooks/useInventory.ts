@@ -8,6 +8,7 @@ const toProduct = (row: Record<string, unknown>): Product => ({
   category: row.category as Product['category'],
   brand: row.brand as string,
   price: row.price as number,
+  costPrice: row.cost_price as number | undefined,
   stock: row.stock as number,
   lowStockThreshold: row.low_stock_threshold as number,
   description: row.description as string | undefined,
