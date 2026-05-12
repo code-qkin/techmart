@@ -65,6 +65,8 @@ export const Inventory: React.FC = () => {
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([])
+  const [expandedImeiIdx, setExpandedImeiIdx] = useState<number | null>(null)
+  const [imeiInput, setImeiInput] = useState('')
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => 
@@ -75,13 +77,40 @@ export const Inventory: React.FC = () => {
   const openEditSheet = (product: Product) => {
     setEditingProduct(product)
     setEditingVariants(product.variants || [])
+    setExpandedImeiIdx(null)
+    setImeiInput('')
     setIsEditSheetOpen(true)
   }
 
   const handleVariantStockChange = (index: number, value: number) => {
     const updated = [...editingVariants]
+    // Don't override stock for IMEI-tracked variants
+    if (updated[index].imeis && updated[index].imeis!.length > 0) return
     updated[index] = { ...updated[index], stock: Math.max(0, value) }
     setEditingVariants(updated)
+  }
+
+  const addImei = (variantIndex: number) => {
+    const imei = imeiInput.trim()
+    if (!imei) return
+    setEditingVariants(prev => {
+      const updated = [...prev]
+      const existing = updated[variantIndex].imeis || []
+      if (existing.includes(imei)) { toast.error('This IMEI is already listed'); return prev }
+      const imeis = [...existing, imei]
+      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
+      return updated
+    })
+    setImeiInput('')
+  }
+
+  const removeImei = (variantIndex: number, imei: string) => {
+    setEditingVariants(prev => {
+      const updated = [...prev]
+      const imeis = (updated[variantIndex].imeis || []).filter(i => i !== imei)
+      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
+      return updated
+    })
   }
 
   const handleUpdateProduct = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -392,24 +421,37 @@ export const Inventory: React.FC = () => {
                 <span className="text-[11px] font-bold text-gray uppercase tracking-widest">Configured Variants</span>
                 <div className="h-px flex-1 bg-gray-100" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {row.original.variants?.map((v, i) => (
-                  <div key={i} className="bg-white p-3 rounded-xl border border-border shadow-sm flex items-center justify-between group">
-                    <div className="flex flex-col">
-                      <span className="text-[13px] font-bold text-navy line-clamp-1">
-                        {[v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
-                      </span>
-                      <span className="text-[10px] font-mono text-primary uppercase font-bold">{v.id}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-[13px] font-bold text-navy block">{v.stock} units</span>
-                        {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
+                  <div key={i} className="bg-white rounded-xl border border-border shadow-sm overflow-hidden group">
+                    <div className="p-3 flex items-center justify-between">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[13px] font-bold text-navy line-clamp-1">
+                          {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
+                        </span>
+                        <span className="text-[10px] font-mono text-primary uppercase font-bold">{v.id}</span>
                       </div>
-                      <button onClick={() => openEditSheet(row.original)} className="p-1.5 text-gray hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-50 rounded">
-                        <Edit size={12} />
-                      </button>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <span className="text-[13px] font-bold text-navy block">{v.stock} units</span>
+                          {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
+                        </div>
+                        <button onClick={() => openEditSheet(row.original)} className="p-1.5 text-gray hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-50 rounded">
+                          <Edit size={12} />
+                        </button>
+                      </div>
                     </div>
+                    {/* IMEI chips in the expanded row */}
+                    {v.imeis && v.imeis.length > 0 && (
+                      <div className="px-3 pb-3 border-t border-gray-100 pt-2">
+                        <p className="text-[9px] font-bold text-gray uppercase tracking-widest mb-1.5">IMEIs in stock</p>
+                        <div className="flex flex-wrap gap-1">
+                          {v.imeis.map(imei => (
+                            <span key={imei} className="px-2 py-0.5 bg-gray-100 rounded text-[10px] font-mono text-navy">{imei}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -464,26 +506,80 @@ export const Inventory: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {editingVariants.map((v, i) => (
-                      <div key={i} className="flex items-center justify-between p-4 bg-gray-50 border border-border rounded-2xl shadow-sm">
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-bold text-navy">
-                            {[v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
-                          </span>
-                          <span className="text-[11px] font-mono text-gray">{v.id}</span>
+                    {editingVariants.map((v, i) => {
+                      const hasImeis = v.imeis && v.imeis.length > 0
+                      const isExpanded = expandedImeiIdx === i
+                      return (
+                        <div key={i} className="bg-gray-50 border border-border rounded-2xl shadow-sm overflow-hidden">
+                          <div className="flex items-center justify-between p-4">
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[13px] font-bold text-navy">
+                                {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
+                              </span>
+                              <span className="text-[11px] font-mono text-gray">{v.id}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {hasImeis || isExpanded ? (
+                                /* IMEI-tracked: stock is read-only, show IMEI toggle */
+                                <>
+                                  <span className="text-[13px] font-black text-navy">{v.stock} units</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setExpandedImeiIdx(isExpanded ? null : i); setImeiInput('') }}
+                                    className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors",
+                                      isExpanded ? "bg-primary text-white" : "bg-white border border-border text-gray hover:text-navy"
+                                    )}
+                                  >
+                                    IMEI {v.imeis?.length ? `(${v.imeis.length})` : ''}
+                                  </button>
+                                </>
+                              ) : (
+                                /* No IMEIs: show +/- counter */
+                                <div className="flex items-center bg-white border border-border rounded-xl p-1 shadow-sm">
+                                  <button type="button" onClick={() => handleVariantStockChange(i, v.stock - 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">-</button>
+                                  <input
+                                    type="number"
+                                    value={v.stock}
+                                    onChange={(e) => handleVariantStockChange(i, Number(e.target.value))}
+                                    className="w-16 text-center text-[14px] font-black text-navy bg-transparent outline-none"
+                                  />
+                                  <button type="button" onClick={() => handleVariantStockChange(i, v.stock + 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">+</button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* IMEI panel */}
+                          {isExpanded && (
+                            <div className="px-4 pb-4 border-t border-border pt-3 space-y-3 animate-in fade-in duration-150">
+                              <p className="text-[10px] font-bold text-gray uppercase tracking-widest">Add new IMEI/Serial — stock updates automatically</p>
+                              <div className="flex gap-2">
+                                <input
+                                  value={imeiInput}
+                                  onChange={e => setImeiInput(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addImei(i) } }}
+                                  placeholder="Scan or type IMEI, then press Enter"
+                                  className="flex-1 h-9 px-3 border border-border rounded-lg text-[13px] font-mono focus:border-primary outline-none bg-white"
+                                />
+                                <button type="button" onClick={() => addImei(i)} className="px-4 h-9 bg-primary text-white rounded-lg font-bold text-[12px] hover:bg-primary-dark transition-colors">Add</button>
+                              </div>
+                              {v.imeis && v.imeis.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto no-scrollbar">
+                                  {v.imeis.map(imei => (
+                                    <span key={imei} className="flex items-center gap-1 px-2 py-0.5 bg-white border border-border rounded-md text-[11px] font-mono text-navy">
+                                      {imei}
+                                      <button type="button" onClick={() => removeImei(i, imei)} className="text-gray/50 hover:text-red-500 ml-0.5 leading-none">×</button>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-gray">No IMEIs yet. Add the first one above.</p>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center bg-white border border-border rounded-xl p-1 shadow-sm">
-                          <button type="button" onClick={() => handleVariantStockChange(i, v.stock - 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">-</button>
-                          <input 
-                            type="number" 
-                            value={v.stock} 
-                            onChange={(e) => handleVariantStockChange(i, Number(e.target.value))}
-                            className="w-16 text-center text-[14px] font-black text-navy bg-transparent outline-none" 
-                          />
-                          <button type="button" onClick={() => handleVariantStockChange(i, v.stock + 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">+</button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
