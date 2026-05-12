@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
 import { DataTable } from '../components/shared/DataTable'
 import { FAB } from '../components/shared/FAB'
+import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { useProducts } from '../hooks/useProducts'
 import { formatNaira, getErrorMessage } from '../lib/utils'
 import { useSuppliersStore } from '../store/suppliersStore'
@@ -53,7 +54,8 @@ export const Products: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [activeTab, setActiveTab] = useState<'general' | 'variants'>('general')
   const [searchQuery, setSearchQuery] = useState('')
-  
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
+
   // General tab form state — persists across tab switches
   const [formName, setFormName] = useState('')
   const [formBrand, setFormBrand] = useState('')
@@ -263,13 +265,15 @@ export const Products: React.FC = () => {
     })
   }, [products, searchQuery, filter])
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!window.confirm("Remove this item from catalog?")) return
+  const handleDeleteProduct = async () => {
+    if (!deleteTarget) return
     try {
-      await deleteProduct(id)
+      await deleteProduct(deleteTarget.id)
       toast.success("Product removed")
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to remove product.'))
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
@@ -317,8 +321,8 @@ export const Products: React.FC = () => {
           >
             <Edit size={16} />
           </button>
-          <button 
-            onClick={() => handleDeleteProduct(row.original.id)}
+          <button
+            onClick={() => setDeleteTarget(row.original)}
             className="p-2 text-gray hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
           >
             <Trash2 size={16} />
@@ -432,6 +436,15 @@ export const Products: React.FC = () => {
       )}
 
       <FAB onClick={() => setIsAddSheetOpen(true)} />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove Product"
+        message={`"${deleteTarget?.name}" will be permanently removed from the catalog.`}
+        confirmLabel="Yes, Remove"
+        onConfirm={handleDeleteProduct}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       {/* Add/Edit Product Professional Sheet */}
       {isAddSheetOpen && (
