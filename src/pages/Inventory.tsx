@@ -30,6 +30,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
 import { useBatches } from '../hooks/useBatches'
@@ -56,6 +57,7 @@ const getCategoryIcon = (category: string, name: string = '', size: number = 24)
 }
 
 export const Inventory: React.FC = () => {
+  const navigate = useNavigate()
   const { inventory, isLoading, updateStock } = useInventory()
   const { updateProduct } = useProducts()
   const { isHidden, toggle } = usePrivacyStore()
@@ -505,8 +507,11 @@ export const Inventory: React.FC = () => {
                         >
                           + Receive
                         </button>
-                        <button onClick={() => openEditSheet(row.original)} className="p-1.5 text-gray hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-50 rounded">
-                          <Edit size={12} />
+                        <button
+                          onClick={() => navigate('/batches', { state: { productId: row.original.id, variantId: v.id } })}
+                          className="px-2 py-1 text-gray hover:bg-gray-200 hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-100 rounded text-[10px] font-bold border border-border"
+                        >
+                          Batches
                         </button>
                       </div>
                     </div>

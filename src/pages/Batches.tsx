@@ -1,17 +1,22 @@
 import React, { useState, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { PageHeader } from '../components/shared/PageHeader'
 import { useBatches } from '../hooks/useBatches'
 import { useProducts } from '../hooks/useProducts'
 import { formatNaira } from '../lib/utils'
-import { Package, Search, Archive } from 'lucide-react'
+import { Search, Archive, X } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 export const Batches: React.FC = () => {
+  const location = useLocation()
+  const navState = location.state as { productId?: string; variantId?: string } | null
   const { batches, isLoading } = useBatches()
   const { products } = useProducts()
   const [search, setSearch] = useState('')
   const [supplierFilter, setSupplierFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'depleted'>('all')
+  const [pinnedProductId, setPinnedProductId] = useState<string | undefined>(navState?.productId)
+  const [pinnedVariantId, setPinnedVariantId] = useState<string | undefined>(navState?.variantId)
 
   const getProductName = (productId: string, variantId?: string) => {
     const product = products.find(p => p.id === productId)
@@ -32,8 +37,12 @@ export const Batches: React.FC = () => {
     return ['All', ...Array.from(new Set(all))]
   }, [batches])
 
+  const pinnedProductName = pinnedProductId ? getProductName(pinnedProductId, pinnedVariantId) : null
+
   const filtered = useMemo(() => {
     return batches.filter(b => {
+      if (pinnedProductId && b.productId !== pinnedProductId) return false
+      if (pinnedVariantId && b.variantId !== pinnedVariantId) return false
       if (supplierFilter !== 'All' && b.supplier !== supplierFilter) return false
       if (statusFilter === 'active' && b.quantityRemaining === 0) return false
       if (statusFilter === 'depleted' && b.quantityRemaining > 0) return false
@@ -45,7 +54,7 @@ export const Batches: React.FC = () => {
       }
       return true
     })
-  }, [batches, supplierFilter, statusFilter, search, products])
+  }, [batches, pinnedProductId, pinnedVariantId, supplierFilter, statusFilter, search, products])
 
   const totalCostValue = filtered.reduce((sum, b) => sum + b.quantityRemaining * b.costPrice, 0)
   const totalUnitsRemaining = filtered.reduce((sum, b) => sum + b.quantityRemaining, 0)
@@ -57,6 +66,22 @@ export const Batches: React.FC = () => {
         title="Batch History"
         subtitle="Every stock delivery logged with cost, supplier and remaining units"
       />
+
+      {/* Pinned variant filter banner */}
+      {pinnedProductName && (
+        <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 animate-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-bold text-primary uppercase tracking-wider">Filtered by:</span>
+            <span className="text-[13px] font-bold text-navy">{pinnedProductName}</span>
+          </div>
+          <button
+            onClick={() => { setPinnedProductId(undefined); setPinnedVariantId(undefined) }}
+            className="p-1.5 text-gray hover:text-navy hover:bg-white rounded-lg transition-colors"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
