@@ -236,7 +236,9 @@ export const Products: React.FC = () => {
         const existing = editingProduct?.variants?.find(ev => ev.id === v.id)
         const units = v.units ?? existing?.units
         const stock = units ? units.length : (existing?.stock || v.stock || 0)
-        return { ...v, units, stock }
+        const updatedPrice = (v.storage && storagePrices[v.storage]) ? Number(storagePrices[v.storage]) : v.price
+        const updatedCostPrice = (v.storage && storageCostPrices[v.storage]) ? Number(storageCostPrices[v.storage]) : v.costPrice
+        return { ...v, price: updatedPrice, costPrice: updatedCostPrice, units, stock }
       }),
       createdAt: editingProduct?.createdAt || new Date().toISOString(),
     }
