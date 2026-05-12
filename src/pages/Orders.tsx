@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
-import type { Order, Product, ProductVariant, CartItem, Customer } from '../types'
+import type { Order, Product, ProductVariant, CartItem, Customer, VariantUnit } from '../types'
 import { toast } from 'sonner'
 
 const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
@@ -129,12 +129,13 @@ export const Orders: React.FC = () => {
     [productSearch, newOrderCategory, products]
   )
 
-  const addToCart = (product: Product, variant?: ProductVariant, imei?: string) => {
+  const addToCart = (product: Product, variant?: ProductVariant, unit?: VariantUnit) => {
     if (product.variants && product.variants.length > 0) {
       if (!variant) { setSelectingVariantFor(product); return }
       if (variant.stock <= 0) { toast.error('This variant is out of stock'); return }
-      // If variant has IMEIs and no IMEI was picked yet, open IMEI picker
-      if (variant.imeis && variant.imeis.length > 0 && !imei) {
+      // If variant has tracked units with IMEIs and none was picked yet, open IMEI picker
+      const availableUnits = variant.units?.filter(u => u.imei) || []
+      if (availableUnits.length > 0 && !unit) {
         setSelectingImeiFor({ product, variant })
         setImeiPickerInput('')
         setSelectingVariantFor(null)
@@ -146,10 +147,10 @@ export const Orders: React.FC = () => {
       toast.error(`${product.name} is out of stock`); return
     }
     const existing = cart.find((i) => i.product.id === product.id && i.variant?.id === variant?.id)
-    if (existing && !imei) {
+    if (existing && !unit) {
       setCart(cart.map((i) => (i.product.id === product.id && i.variant?.id === variant?.id) ? { ...i, quantity: i.quantity + 1 } : i))
     } else {
-      setCart([...cart, { product, quantity: 1, variant, imei }])
+      setCart([...cart, { product, quantity: 1, variant, unit }])
     }
     setProductSearch('')
     setSelectingVariantFor(null)
@@ -219,7 +220,8 @@ export const Orders: React.FC = () => {
         storage: item.variant?.storage,
         condition: item.variant?.condition,
         variantId: item.variant?.id,
-        imei: item.imei,
+        imei: item.unit?.imei,
+        supplier: item.unit?.supplier,
       })),
       subtotal,
       taxAmount: 0,
@@ -463,19 +465,29 @@ export const Orders: React.FC = () => {
                   </div>
 
                   <div className="space-y-3">
-                    <p className="text-[11px] font-bold text-gray uppercase tracking-widest">Available units ({selectingImeiFor.variant.imeis?.length})</p>
-                    <div className="max-h-48 overflow-y-auto space-y-1.5 no-scrollbar">
-                      {selectingImeiFor.variant.imeis?.map(imei => (
-                        <button
-                          key={imei}
-                          onClick={() => addToCart(selectingImeiFor.product, selectingImeiFor.variant, imei)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 border border-border rounded-xl hover:border-primary hover:bg-primary/5 transition-all text-left"
-                        >
-                          <span className="font-mono text-[13px] text-navy font-bold">{imei}</span>
-                          <ArrowRight size={14} className="text-primary" />
-                        </button>
-                      ))}
-                    </div>
+                    {(() => {
+                      const tracked = selectingImeiFor.variant.units?.filter(u => u.imei) || []
+                      return (
+                        <>
+                          <p className="text-[11px] font-bold text-gray uppercase tracking-widest">Available units ({tracked.length})</p>
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 no-scrollbar">
+                            {tracked.map((u, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => addToCart(selectingImeiFor.product, selectingImeiFor.variant, u)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 border border-border rounded-xl hover:border-primary hover:bg-primary/5 transition-all text-left"
+                              >
+                                <div>
+                                  <span className="font-mono text-[13px] text-navy font-bold block">{u.imei}</span>
+                                  {u.supplier && <span className="text-[10px] text-gray">{u.supplier}</span>}
+                                </div>
+                                <ArrowRight size={14} className="text-primary" />
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )
+                    })()}
 
                     <div className="flex items-center gap-3 pt-1">
                       <div className="flex-1 h-px bg-border" />
@@ -486,12 +498,12 @@ export const Orders: React.FC = () => {
                       <input
                         value={imeiPickerInput}
                         onChange={e => setImeiPickerInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && imeiPickerInput.trim()) addToCart(selectingImeiFor.product, selectingImeiFor.variant, imeiPickerInput.trim()) }}
+                        onKeyDown={e => { if (e.key === 'Enter' && imeiPickerInput.trim()) addToCart(selectingImeiFor.product, selectingImeiFor.variant, { imei: imeiPickerInput.trim() }) }}
                         placeholder="Enter IMEI manually"
                         className="flex-1 h-10 px-3 border border-border rounded-xl text-[13px] focus:border-primary outline-none font-mono"
                       />
                       <button
-                        onClick={() => { if (imeiPickerInput.trim()) addToCart(selectingImeiFor.product, selectingImeiFor.variant, imeiPickerInput.trim()) }}
+                        onClick={() => { if (imeiPickerInput.trim()) addToCart(selectingImeiFor.product, selectingImeiFor.variant, { imei: imeiPickerInput.trim() }) }}
                         className="px-4 h-10 bg-primary text-white rounded-xl font-bold text-[13px] hover:bg-primary-dark transition-colors"
                       >
                         Add
@@ -609,7 +621,7 @@ export const Orders: React.FC = () => {
                               <span className="text-[14px] font-bold text-navy leading-tight">{item.product.name}</span>
                               <span className="text-[11px] text-gray font-medium mt-0.5">
                                 {item.variant?.label || [item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}
-                                {item.imei && <span className="ml-1 font-mono text-[10px] text-gray/70">· {item.imei}</span>}
+                                {item.unit?.imei && <span className="ml-1 font-mono text-[10px] text-gray/70">· {item.unit.imei}</span>}
                               </span>
                             </div>
                             <div className="flex items-center gap-8">
@@ -651,7 +663,7 @@ export const Orders: React.FC = () => {
                                 <span className="text-[15px] font-bold text-navy">{item.product.name}</span>
                                 <span className="text-[12px] text-gray mt-0.5">
                                   {item.variant?.label || [item.variant?.color, item.variant?.storage, item.variant?.condition].filter(Boolean).join(' • ')}
-                                  {item.imei && <span className="block font-mono text-[10px] text-gray/60">IMEI: {item.imei}</span>}
+                                  {item.unit?.imei && <span className="block font-mono text-[10px] text-gray/60">IMEI: {item.unit.imei}</span>}
                                 </span>
                               </div>
                             </td>

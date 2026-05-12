@@ -4,6 +4,7 @@ import { DataTable } from '../components/shared/DataTable'
 import { FAB } from '../components/shared/FAB'
 import { useProducts } from '../hooks/useProducts'
 import { formatNaira, getErrorMessage } from '../lib/utils'
+import { useSuppliersStore } from '../store/suppliersStore'
 import { 
   Plus, 
   Search, 
@@ -45,6 +46,7 @@ const getCategoryIcon = (category: string, name: string = '', size: number = 24)
 
 export const Products: React.FC = () => {
   const { products, isLoading, addProduct, updateProduct, deleteProduct } = useProducts()
+  const { suppliers } = useSuppliersStore()
   const [filter, setFilter] = useState('All')
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false)
@@ -58,6 +60,7 @@ export const Products: React.FC = () => {
   const [formCategory, setFormCategory] = useState<Product['category']>('Phones')
   const [formPrice, setFormPrice] = useState('')
   const [formDescription, setFormDescription] = useState('')
+  const [formSupplier, setFormSupplier] = useState('')
 
   // Multi-dimensional Variant State
   const [productVariants, setProductVariants] = useState<ProductVariant[]>([])
@@ -68,8 +71,6 @@ export const Products: React.FC = () => {
   const [showManualAdd, setShowManualAdd] = useState(false)
   const [manualForm, setManualForm] = useState<{ label: string; color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ label: '', color: '', storage: '', ram: '', condition: 'New' })
   const [storagePrices, setStoragePrices] = useState<Record<string, string>>({})
-  const [expandedImeiIdx, setExpandedImeiIdx] = useState<number | null>(null)
-  const [imeiInput, setImeiInput] = useState('')
 
   const categories = ['All', 'Phones', 'Laptops', 'Tablets', 'Accessories']
   const colorOptions = [
@@ -95,6 +96,7 @@ export const Products: React.FC = () => {
     setFormCategory(product.category)
     setFormPrice(String(product.price))
     setFormDescription(product.description || '')
+    setFormSupplier(product.supplier || '')
     setProductVariants(product.variants || [])
     
     const colors = Array.from(new Set(product.variants?.map(v => v.color).filter(Boolean))) as string[]
@@ -129,11 +131,10 @@ export const Products: React.FC = () => {
     setSelectedStorages([])
     setSelectedRAMs([])
     setSelectedConditions(['New'])
+    setFormSupplier('')
     setShowManualAdd(false)
     setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' })
     setStoragePrices({})
-    setExpandedImeiIdx(null)
-    setImeiInput('')
     setActiveTab('general')
   }
 
@@ -199,29 +200,6 @@ export const Products: React.FC = () => {
     setProductVariants(updated)
   }
 
-  const addImei = (variantIndex: number) => {
-    const imei = imeiInput.trim()
-    if (!imei) return
-    setProductVariants(prev => {
-      const updated = [...prev]
-      const existing = updated[variantIndex].imeis || []
-      if (existing.includes(imei)) return prev
-      const imeis = [...existing, imei]
-      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
-      return updated
-    })
-    setImeiInput('')
-  }
-
-  const removeImei = (variantIndex: number, imei: string) => {
-    setProductVariants(prev => {
-      const updated = [...prev]
-      const imeis = (updated[variantIndex].imeis || []).filter(i => i !== imei)
-      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
-      return updated
-    })
-  }
-
   const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
@@ -239,11 +217,12 @@ export const Products: React.FC = () => {
              formCategory === 'Laptops' ? '💻' :
              formCategory === 'Tablets' ? '📟' : '🎧',
       description: formDescription,
+      supplier: formSupplier || undefined,
       variants: productVariants.map(v => {
         const existing = editingProduct?.variants?.find(ev => ev.id === v.id)
-        const imeis = v.imeis ?? existing?.imeis ?? []
-        const stock = imeis.length > 0 ? imeis.length : (existing?.stock || v.stock || 0)
-        return { ...v, imeis: imeis.length > 0 ? imeis : undefined, stock }
+        const units = v.units ?? existing?.units
+        const stock = units ? units.length : (existing?.stock || v.stock || 0)
+        return { ...v, units, stock }
       }),
       createdAt: editingProduct?.createdAt || new Date().toISOString(),
     }
@@ -505,7 +484,21 @@ export const Products: React.FC = () => {
 
                     <div className="space-y-2">
                       <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Description</label>
-                      <textarea rows={4} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} className="w-full p-4 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none transition-all resize-none" placeholder="Detailed product specifications and features..."></textarea>
+                      <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} className="w-full p-4 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none transition-all resize-none" placeholder="Detailed product specifications and features..."></textarea>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Default Supplier</label>
+                      <input
+                        list="supplier-options"
+                        value={formSupplier}
+                        onChange={e => setFormSupplier(e.target.value)}
+                        placeholder="Select or type supplier"
+                        className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none transition-all"
+                      />
+                      <datalist id="supplier-options">
+                        {suppliers.map(s => <option key={s} value={s} />)}
+                      </datalist>
                     </div>
                   </div>
                 )}
@@ -617,47 +610,13 @@ export const Products: React.FC = () => {
                               <div className="flex items-center gap-1 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => { setExpandedImeiIdx(expandedImeiIdx === i ? null : i); setImeiInput('') }}
-                                  className={cn("px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-colors",
-                                    expandedImeiIdx === i ? "bg-primary text-white" : "bg-gray-100 text-gray hover:bg-gray-200"
-                                  )}
+                                  onClick={() => setProductVariants(prev => prev.filter((_, idx) => idx !== i))}
+                                  className="p-2 text-gray/40 hover:text-red-500 transition-colors"
                                 >
-                                  IMEI {v.imeis?.length ? `(${v.imeis.length})` : ''}
-                                </button>
-                                <button type="button" onClick={() => setProductVariants(prev => prev.filter((_, idx) => idx !== i))} className="p-2 text-gray/40 hover:text-red-500 transition-colors">
                                   <Trash2 size={16} />
                                 </button>
                               </div>
                             </div>
-
-                            {/* IMEI Panel */}
-                            {expandedImeiIdx === i && (
-                              <div className="px-4 pb-4 space-y-3 border-t border-border pt-3 animate-in fade-in duration-150">
-                                <p className="text-[10px] font-bold text-gray uppercase tracking-widest">IMEI / Serial Numbers — stock auto-updates</p>
-                                <div className="flex gap-2">
-                                  <input
-                                    value={imeiInput}
-                                    onChange={e => setImeiInput(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addImei(i) } }}
-                                    placeholder="Type IMEI and press Enter or Add"
-                                    className="flex-1 h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none"
-                                  />
-                                  <button type="button" onClick={() => addImei(i)} className="px-4 h-9 bg-primary text-white rounded-lg font-bold text-[12px] hover:bg-primary-dark transition-colors">Add</button>
-                                </div>
-                                {v.imeis && v.imeis.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {v.imeis.map(imei => (
-                                      <span key={imei} className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-[11px] font-mono text-navy">
-                                        {imei}
-                                        <button type="button" onClick={() => removeImei(i, imei)} className="text-gray/50 hover:text-red-500 ml-0.5">×</button>
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-[11px] text-gray">No IMEIs added yet.</p>
-                                )}
-                              </div>
-                            )}
                           </div>
                         ))}
                       </div>

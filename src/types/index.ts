@@ -1,3 +1,8 @@
+export interface VariantUnit {
+  imei: string
+  supplier?: string
+}
+
 export interface ProductVariant {
   id: string // SKU
   label?: string  // free-form label for custom variant types (e.g. "Privacy", "Type-C")
@@ -7,7 +12,7 @@ export interface ProductVariant {
   condition: 'New' | 'Open Box' | 'Pre-owned'
   stock: number
   price?: number
-  imeis?: string[]  // tracked IMEI/serial numbers; stock = imeis.length when present
+  units?: VariantUnit[]  // per-unit IMEI + supplier tracking
 }
 
 export interface Product {
@@ -37,6 +42,7 @@ export interface OrderItem {
   condition?: string
   variantId?: string
   imei?: string
+  supplier?: string
 }
 
 export interface Installment {
@@ -83,7 +89,7 @@ export interface CartItem {
   product: Product
   quantity: number
   variant?: ProductVariant
-  imei?: string
+  unit?: VariantUnit
 }
 
 export type StockStatus = 'in' | 'low' | 'out'

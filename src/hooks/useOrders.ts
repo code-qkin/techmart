@@ -81,10 +81,10 @@ export const useOrders = () => {
           if (product?.variants) {
             const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) => {
               if (v.id !== item.variantId) return v
-              // If this sale has an IMEI, remove that specific unit from the imeis array
-              if (item.imei && Array.isArray(v.imeis)) {
-                const imeis = (v.imeis as string[]).filter(i => i !== item.imei)
-                return { ...v, imeis, stock: imeis.length }
+              // If this sale has an IMEI, remove that specific unit from the units array
+              if (item.imei && Array.isArray(v.units)) {
+                const units = (v.units as Array<{ imei: string; supplier?: string }>).filter(u => u.imei !== item.imei)
+                return { ...v, units, stock: units.length }
               }
               return { ...v, stock: Math.max(0, (v.stock as number) - item.quantity) }
             })
@@ -142,10 +142,10 @@ export const useOrders = () => {
           if (product?.variants) {
             const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) => {
               if (v.id !== item.variantId) return v
-              // Restore the IMEI back to the imeis array on return
-              if (item.imei && Array.isArray(v.imeis)) {
-                const imeis = [...(v.imeis as string[]), item.imei]
-                return { ...v, imeis, stock: imeis.length }
+              // Restore the unit back to the units array on return
+              if (item.imei && Array.isArray(v.units)) {
+                const units = [...(v.units as Array<{ imei: string; supplier?: string }>), { imei: item.imei, supplier: item.supplier }]
+                return { ...v, units, stock: units.length }
               }
               return { ...v, stock: (v.stock as number) + item.quantity }
             })
