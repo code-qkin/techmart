@@ -59,6 +59,7 @@ export const Products: React.FC = () => {
   const [formBrand, setFormBrand] = useState('')
   const [formCategory, setFormCategory] = useState<Product['category']>('Phones')
   const [formPrice, setFormPrice] = useState('')
+  const [formCostPrice, setFormCostPrice] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formSupplier, setFormSupplier] = useState('')
 
@@ -95,6 +96,7 @@ export const Products: React.FC = () => {
     setFormBrand(product.brand)
     setFormCategory(product.category)
     setFormPrice(String(product.price))
+    setFormCostPrice(String(product.costPrice || ''))
     setFormDescription(product.description || '')
     setFormSupplier(product.supplier || '')
     setProductVariants(product.variants || [])
@@ -125,6 +127,7 @@ export const Products: React.FC = () => {
     setFormBrand('')
     setFormCategory('Phones')
     setFormPrice('')
+    setFormCostPrice('')
     setFormDescription('')
     setProductVariants([])
     setSelectedColors([])
@@ -211,6 +214,7 @@ export const Products: React.FC = () => {
       category: formCategory,
       brand: formBrand,
       price: Number(formPrice),
+      costPrice: Number(formCostPrice) || undefined,
       stock: currentStock,
       lowStockThreshold: currentThreshold,
       emoji: formCategory === 'Phones' ? '📱' :
@@ -480,6 +484,21 @@ export const Products: React.FC = () => {
                         <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Base Selling Price (₦)</label>
                         <input type="number" required value={formPrice} onChange={(e) => setFormPrice(e.target.value)} className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none transition-all" placeholder="0.00" />
                       </div>
+                      <div className="space-y-2">
+                        <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Base Cost Price (₦)</label>
+                        <input type="number" min={0} value={formCostPrice} onChange={(e) => setFormCostPrice(e.target.value)} className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none transition-all" placeholder="What you paid" />
+                      </div>
+                      {formCostPrice && formPrice && Number(formCostPrice) > 0 && Number(formPrice) > 0 && (
+                        <div className="space-y-2">
+                          <label className="text-[12px] font-bold text-navy uppercase tracking-wider">Estimated Margin</label>
+                          <div className="h-12 px-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center">
+                            <span className="text-[14px] font-bold text-emerald-700">
+                              {(((Number(formPrice) - Number(formCostPrice)) / Number(formPrice)) * 100).toFixed(1)}%
+                              <span className="text-[12px] font-medium text-emerald-600 ml-2">({formatNaira(Number(formPrice) - Number(formCostPrice))} profit)</span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -591,7 +610,7 @@ export const Products: React.FC = () => {
                         {productVariants.map((v, i) => (
                           <div key={i} className="bg-white border border-border rounded-xl shadow-sm hover:border-primary/30 transition-all">
                             <div className="flex items-center gap-3 p-4">
-                              <div className="flex-1 grid grid-cols-3 gap-4 items-center">
+                              <div className="flex-1 grid grid-cols-4 gap-3 items-center">
                                 <div className="col-span-1">
                                   <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Variant</span>
                                   <span className="text-[12px] font-bold text-navy line-clamp-1">
@@ -599,12 +618,16 @@ export const Products: React.FC = () => {
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU / ID</span>
-                                  <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[12px] font-mono text-primary bg-transparent focus:underline outline-none" />
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU</span>
+                                  <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[11px] font-mono text-primary bg-transparent focus:underline outline-none" />
                                 </div>
                                 <div>
-                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Price (₦)</span>
-                                  <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="Optional" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Sell (₦)</span>
+                                  <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="—" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Cost (₦)</span>
+                                  <input type="number" value={v.costPrice || ''} onChange={(e) => updateVariant(i, 'costPrice', Number(e.target.value))} placeholder="—" className="w-full text-[13px] font-bold text-orange-600 bg-transparent outline-none border-b border-transparent focus:border-orange-400" />
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
