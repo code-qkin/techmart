@@ -2,22 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { Product } from '../types'
 
-const toProduct = (row: Record<string, unknown>): Product => ({
-  id: row.id as string,
-  name: row.name as string,
-  category: row.category as Product['category'],
-  brand: row.brand as string,
-  price: row.price as number,
-  costPrice: row.cost_price as number | undefined,
-  stock: row.stock as number,
-  lowStockThreshold: row.low_stock_threshold as number,
-  description: row.description as string | undefined,
-  emoji: (row.emoji as string) || '📦',
-  variants: (row.variants as Product['variants']) || [],
-  supplier: row.supplier as string | undefined,
-  createdAt: row.created_at as string,
-  stockUpdatedAt: row.stock_updated_at as string | undefined,
-})
+const toProduct = (row: Record<string, unknown>): Product => {
+  const variants = (row.variants as Product['variants']) || []
+  const stock = variants.length > 0
+    ? variants.reduce((sum, v) => sum + (v.stock || 0), 0)
+    : row.stock as number
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    category: row.category as Product['category'],
+    brand: row.brand as string,
+    price: row.price as number,
+    costPrice: row.cost_price as number | undefined,
+    stock,
+    lowStockThreshold: row.low_stock_threshold as number,
+    description: row.description as string | undefined,
+    emoji: (row.emoji as string) || '📦',
+    variants,
+    supplier: row.supplier as string | undefined,
+    createdAt: row.created_at as string,
+    stockUpdatedAt: row.stock_updated_at as string | undefined,
+  }
+}
 
 export const useProducts = () => {
   const queryClient = useQueryClient()

@@ -23,9 +23,7 @@ import {
   MousePointer2,
   ChevronDown,
   ChevronRight,
-  Edit,
   X,
-  Shield,
   Banknote,
   Eye,
   EyeOff
@@ -39,20 +37,19 @@ import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant, VariantUnit } from '../types'
 import { toast } from 'sonner'
 
-// Icon mapping helper
 const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
   const props = { size, className: "shrink-0" }
   if (category === 'Phones') return <Smartphone {...props} />
   if (category === 'Laptops') return <Laptop {...props} />
   if (category === 'Tablets') return <Tablet {...props} />
-  
+
   const lowName = name.toLowerCase()
   if (lowName.includes('watch')) return <Watch {...props} />
   if (lowName.includes('ear') || lowName.includes('airpod') || lowName.includes('headphone')) return <Headphones {...props} />
   if (lowName.includes('game') || lowName.includes('play')) return <Gamepad2 {...props} />
   if (lowName.includes('speak')) return <Speaker {...props} />
   if (lowName.includes('mouse')) return <MousePointer2 {...props} />
-  
+
   return <Headphones {...props} />
 }
 
@@ -61,9 +58,8 @@ export const Inventory: React.FC = () => {
   const { inventory, isLoading, updateStock } = useInventory()
   const { updateProduct } = useProducts()
   const { isHidden, toggle } = usePrivacyStore()
-  const { suppliers, addSupplier } = useSuppliers()
+  const { suppliers } = useSuppliers()
   const { receiveBatch } = useBatches()
-  const [newSupplierInput, setNewSupplierInput] = useState('')
   const [filter, setFilter] = useState('All Items')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedRows, setExpandedRows] = useState<string[]>([])
@@ -78,14 +74,44 @@ export const Inventory: React.FC = () => {
   const [receiveSupplier, setReceiveSupplier] = useState('')
   const [receiveNotes, setReceiveNotes] = useState('')
   const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0])
+  const [receiveUnits, setReceiveUnits] = useState<{ imei: string; supplier: string }[]>([])
 
-  // State for editing from inventory
-  const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([])
+  // Inline IMEI edit state
+  const [imeiEditKey, setImeiEditKey] = useState<string | null>(null) // `${productId}:${variantId}`
+  const [imeiEditUnits, setImeiEditUnits] = useState<VariantUnit[]>([])
+  const [isSavingImei, setIsSavingImei] = useState(false)
+
+  const openImeiEdit = (product: Product, variant: ProductVariant) => {
+    const key = `${product.id}:${variant.id}`
+    if (imeiEditKey === key) { setImeiEditKey(null); return }
+    const existing = variant.units || []
+    setImeiEditUnits(
+      Array.from({ length: Math.max(variant.stock, existing.length) }, (_, i) => ({
+        imei: existing[i]?.imei || '',
+        supplier: existing[i]?.supplier || '',
+      }))
+    )
+    setImeiEditKey(key)
+  }
+
+  const saveImeiEdit = async (product: Product, variant: ProductVariant) => {
+    setIsSavingImei(true)
+    try {
+      const updatedVariants = (product.variants || []).map(v =>
+        v.id === variant.id ? { ...v, units: imeiEditUnits } : v
+      )
+      await updateProduct({ ...product, variants: updatedVariants })
+      toast.success('IMEI records saved')
+      setImeiEditKey(null)
+    } catch {
+      toast.error('Failed to save IMEI records')
+    } finally {
+      setIsSavingImei(false)
+    }
+  }
 
   const toggleRow = (id: string) => {
-    setExpandedRows(prev => 
+    setExpandedRows(prev =>
       prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]
     )
   }
@@ -99,13 +125,33 @@ export const Inventory: React.FC = () => {
     setReceiveSupplier('')
     setReceiveNotes('')
     setReceiveDate(new Date().toISOString().split('T')[0])
+    setReceiveUnits(variant ? [{ imei: '', supplier: '' }] : [])
     setIsReceiveModalOpen(true)
+  }
+
+  const handleQtyChange = (value: string) => {
+    setReceiveQty(value)
+    if (receivingVariant) {
+      const qty = Math.max(0, Number(value) || 0)
+      setReceiveUnits(prev =>
+        Array.from({ length: qty }, (_, i) => prev[i] || { imei: '', supplier: receiveSupplier })
+      )
+    }
+  }
+
+  const handleSupplierChange = (value: string) => {
+    setReceiveSupplier(value)
+    // Auto-fill any unit rows that haven't had their supplier manually set
+    setReceiveUnits(prev => prev.map(u => u.supplier ? u : { ...u, supplier: value }))
   }
 
   const handleReceiveStock = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!receivingProduct || !receiveQty || !receiveCostPrice) return
     try {
+      const filledUnits = receiveUnits
+        .filter(u => u.imei.trim())
+        .map(u => ({ ...u, supplier: u.supplier || receiveSupplier }))
       await receiveBatch({
         productId: receivingProduct.id,
         variantId: receivingVariant?.id,
@@ -115,81 +161,12 @@ export const Inventory: React.FC = () => {
         sellPrice: Number(receiveSellPrice) || undefined,
         notes: receiveNotes || undefined,
         receivedAt: new Date(receiveDate).toISOString(),
+        units: filledUnits.length > 0 ? filledUnits : undefined,
       })
       toast.success(`${receiveQty} units received into stock`)
       setIsReceiveModalOpen(false)
     } catch {
       toast.error('Failed to receive stock')
-    }
-  }
-
-  const openEditSheet = (product: Product) => {
-    setEditingProduct(product)
-    setEditingVariants(product.variants || [])
-    setIsEditSheetOpen(true)
-  }
-
-  const handleVariantStockChange = (variantIndex: number, newStock: number) => {
-    const stock = Math.max(0, newStock)
-    setEditingVariants(prev => {
-      const updated = [...prev]
-      const currentUnits = updated[variantIndex].units || []
-      let units: VariantUnit[]
-      if (stock > currentUnits.length) {
-        units = [...currentUnits, ...Array.from({ length: stock - currentUnits.length }, () => ({ imei: '', supplier: '' }))]
-      } else {
-        units = currentUnits.slice(0, stock)
-      }
-      updated[variantIndex] = { ...updated[variantIndex], stock, units }
-      return updated
-    })
-  }
-
-  const updateVariantField = (variantIndex: number, field: 'price' | 'costPrice', value: number) => {
-    setEditingVariants(prev => {
-      const updated = [...prev]
-      updated[variantIndex] = { ...updated[variantIndex], [field]: value || undefined }
-      return updated
-    })
-  }
-
-  const updateUnit = (variantIndex: number, unitIndex: number, field: keyof VariantUnit, value: string) => {
-    setEditingVariants(prev => {
-      const updated = [...prev]
-      const units = [...(updated[variantIndex].units || [])]
-      units[unitIndex] = { ...units[unitIndex], [field]: value }
-      updated[variantIndex] = { ...updated[variantIndex], units }
-      return updated
-    })
-  }
-
-  const handleUpdateProduct = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!editingProduct) return
-
-    const formData = new FormData(e.currentTarget)
-    
-    // Calculate total stock from variants
-    const totalStock = editingVariants.reduce((sum, v) => sum + v.stock, 0)
-
-    const productData: Product = {
-      ...editingProduct,
-      name: formData.get('name') as string,
-      brand: formData.get('brand') as string,
-      price: Number(formData.get('price')),
-      costPrice: Number(formData.get('costPrice')) || undefined,
-      stock: editingVariants.length > 0 ? totalStock : Number(formData.get('stock')),
-      lowStockThreshold: Number(formData.get('threshold')),
-      description: formData.get('description') as string,
-      variants: editingVariants,
-    }
-
-    try {
-      await updateProduct(productData)
-      toast.success("Product updated")
-      setIsEditSheetOpen(false)
-    } catch {
-      toast.error("Failed to update product")
     }
   }
 
@@ -217,10 +194,10 @@ export const Inventory: React.FC = () => {
 
   const filteredInventory = inventory.filter(p => {
     const status = getStockStatus(p.stock, p.lowStockThreshold)
-    const matchesFilter = filter === 'All Items' || 
+    const matchesFilter = filter === 'All Items' ||
                          (filter === 'Low Stock' && status === 'low') ||
                          (filter === 'Out of Stock' && status === 'out')
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           p.brand.toLowerCase().includes(searchQuery.toLowerCase())
     return matchesFilter && matchesSearch
   })
@@ -240,10 +217,10 @@ export const Inventory: React.FC = () => {
     const rows = inventory.map(p => [
       p.name, p.category, p.brand, p.stock, p.lowStockThreshold, getStockStatus(p.stock, p.lowStockThreshold)
     ])
-    
-    const csvContent = "data:text/csv;charset=utf-8," 
+
+    const csvContent = "data:text/csv;charset=utf-8,"
       + [headers.join(","), ...rows.map(r => r.join(","))].join("\n")
-    
+
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -262,7 +239,7 @@ export const Inventory: React.FC = () => {
         const hasVariants = row.original.variants && row.original.variants.length > 0
         if (!hasVariants) return null
         return (
-          <button 
+          <button
             onClick={() => toggleRow(row.original.id)}
             className="p-1 hover:bg-gray-100 rounded text-gray"
           >
@@ -293,7 +270,7 @@ export const Inventory: React.FC = () => {
         const percentage = Math.min(100, (row.original.stock / 30) * 100)
         const status = getStockStatus(row.original.stock, row.original.lowStockThreshold)
         const barColor = status === 'out' ? 'bg-primary' : status === 'low' ? 'bg-warning' : 'bg-success'
-        
+
         return (
           <div className="flex items-center gap-3 w-full max-w-[160px]">
             <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -351,12 +328,6 @@ export const Inventory: React.FC = () => {
               </button>
             </>
           )}
-          <button 
-            onClick={() => openEditSheet(row.original)}
-            className="w-8 h-8 flex items-center justify-center rounded-md border border-border bg-white text-gray hover:text-primary hover:border-primary transition-colors ml-2"
-          >
-            <Edit size={14} />
-          </button>
         </div>
       )
     }
@@ -444,8 +415,8 @@ export const Inventory: React.FC = () => {
               onClick={() => setFilter(cat)}
               className={cn(
                 "px-4 py-1.5 rounded-full text-[13px] font-bold whitespace-nowrap transition-all",
-                filter === cat 
-                  ? "bg-primary text-white" 
+                filter === cat
+                  ? "bg-primary text-white"
                   : "bg-transparent text-gray hover:bg-gray-100"
               )}
             >
@@ -457,15 +428,15 @@ export const Inventory: React.FC = () => {
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex-1 md:w-64 relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Search inventory..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-border rounded-md text-[13px] focus:outline-none focus:border-primary"
             />
           </div>
-          <button 
+          <button
             onClick={exportCSV}
             className="flex items-center gap-2 border border-border px-4 py-2 rounded-md text-[13px] font-bold text-gray hover:text-navy hover:bg-gray-100 transition-colors shrink-0"
           >
@@ -475,10 +446,10 @@ export const Inventory: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-lg border border-border overflow-hidden">
-        <DataTable 
-          columns={columns} 
-          data={filteredInventory} 
-          isLoading={isLoading} 
+        <DataTable
+          columns={columns}
+          data={filteredInventory}
+          isLoading={isLoading}
           emptyMessage="Inventory looks clear!"
           renderExpandedRow={(row) => (
             <div className="bg-gray-50/50 p-4 pl-14 border-y border-gray-100 animate-in slide-in-from-top-1 duration-200">
@@ -487,47 +458,107 @@ export const Inventory: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-100" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {row.original.variants?.map((v, i) => (
-                  <div key={i} className="bg-white rounded-xl border border-border shadow-sm overflow-hidden group">
-                    <div className="p-3 flex items-center justify-between">
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-[13px] font-bold text-navy line-clamp-1">
-                          {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
-                        </span>
-                        <span className="text-[10px] font-mono text-primary uppercase font-bold">{v.id}</span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="text-right">
-                          <span className="text-[13px] font-bold text-navy block">{v.stock} units</span>
-                          {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
+                {row.original.variants?.map((v, i) => {
+                  const key = `${row.original.id}:${v.id}`
+                  const isEditingImei = imeiEditKey === key
+                  const filledUnits = (v.units || []).filter(u => u.imei)
+                  const missingImei = v.stock - filledUnits.length
+
+                  return (
+                    <div key={i} className="bg-white rounded-xl border border-border shadow-sm overflow-hidden group">
+                      <div className="p-3 flex items-center justify-between">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[13px] font-bold text-navy line-clamp-1">
+                            {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
+                          </span>
+                          <span className="text-[10px] font-mono text-primary uppercase font-bold">{v.id}</span>
                         </div>
-                        <button
-                          onClick={() => openReceiveModal(row.original, v)}
-                          className="px-2 py-1 text-primary hover:bg-primary hover:text-white opacity-0 group-hover:opacity-100 transition-all bg-primary/5 rounded text-[10px] font-bold border border-primary/20"
-                        >
-                          + Receive
-                        </button>
-                        <button
-                          onClick={() => navigate('/batches', { state: { productId: row.original.id, variantId: v.id } })}
-                          className="px-2 py-1 text-gray hover:bg-gray-200 hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-100 rounded text-[10px] font-bold border border-border"
-                        >
-                          Batches
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <span className="text-[13px] font-bold text-navy block">{v.stock} units</span>
+                            {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
+                          </div>
+                          <button
+                            onClick={() => openReceiveModal(row.original, v)}
+                            className="px-2 py-1 text-primary hover:bg-primary hover:text-white opacity-0 group-hover:opacity-100 transition-all bg-primary/5 rounded text-[10px] font-bold border border-primary/20"
+                          >
+                            + Receive
+                          </button>
+                          <button
+                            onClick={() => navigate('/batches', { state: { productId: row.original.id, variantId: v.id } })}
+                            className="px-2 py-1 text-gray hover:bg-gray-200 hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-100 rounded text-[10px] font-bold border border-border"
+                          >
+                            Batches
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* IMEI chips / edit panel */}
+                      <div className="border-t border-gray-100">
+                        {isEditingImei ? (
+                          <div className="px-3 py-3 space-y-2">
+                            <p className="text-[9px] font-bold text-gray uppercase tracking-widest">Edit IMEI & Supplier</p>
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {imeiEditUnits.map((unit, ui) => (
+                                <div key={ui} className="flex items-center gap-1.5">
+                                  <span className="text-[9px] font-bold text-gray/50 w-7 shrink-0 text-center">#{ui + 1}</span>
+                                  <input
+                                    value={unit.imei}
+                                    onChange={e => setImeiEditUnits(prev => prev.map((u, j) => j === ui ? { ...u, imei: e.target.value } : u))}
+                                    placeholder="IMEI / Serial"
+                                    className="flex-1 h-8 px-2 border border-border rounded-lg text-[11px] font-mono focus:border-primary outline-none bg-gray-50 min-w-0"
+                                  />
+                                  <select
+                                    value={unit.supplier || ''}
+                                    onChange={e => setImeiEditUnits(prev => prev.map((u, j) => j === ui ? { ...u, supplier: e.target.value } : u))}
+                                    className="h-8 px-1.5 border border-border rounded-lg text-[11px] focus:border-primary outline-none bg-gray-50 shrink-0 max-w-[110px]"
+                                  >
+                                    <option value="">Supplier</option>
+                                    {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                onClick={() => setImeiEditKey(null)}
+                                className="flex-1 h-8 border border-border rounded-lg text-[11px] font-bold text-gray hover:bg-gray-50 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => saveImeiEdit(row.original, v)}
+                                disabled={isSavingImei}
+                                className="flex-1 h-8 bg-primary text-white rounded-lg text-[11px] font-bold hover:bg-primary-dark disabled:opacity-60 transition-colors"
+                              >
+                                {isSavingImei ? 'Saving…' : 'Save'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => openImeiEdit(row.original, v)}
+                            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                              {filledUnits.length > 0
+                                ? filledUnits.map((u, ui) => (
+                                    <span key={ui} className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono text-navy" title={u.supplier || ''}>{u.imei}</span>
+                                  ))
+                                : <span className="text-[11px] text-gray/40 italic">No IMEI recorded</span>
+                              }
+                            </div>
+                            {missingImei > 0 && (
+                              <span className="text-[10px] font-bold text-amber-500 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0 ml-2">
+                                {missingImei} missing
+                              </span>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    {/* Units (IMEI) chips in the expanded row */}
-                    {v.units && v.units.filter(u => u.imei).length > 0 && (
-                      <div className="px-3 pb-3 border-t border-gray-100 pt-2">
-                        <p className="text-[9px] font-bold text-gray uppercase tracking-widest mb-1.5">Units in stock</p>
-                        <div className="flex flex-wrap gap-1">
-                          {v.units.filter(u => u.imei).map((u, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-gray-100 rounded text-[10px] font-mono text-navy" title={u.supplier || ''}>{u.imei}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -539,21 +570,33 @@ export const Inventory: React.FC = () => {
       {isReceiveModalOpen && receivingProduct && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setIsReceiveModalOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] animate-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="h-1 w-full bg-primary" />
-            <form onSubmit={handleReceiveStock} className="p-7 space-y-5">
-              <div>
-                <h3 className="text-[17px] font-bold text-navy">Receive Stock</h3>
-                <p className="text-[12px] text-gray mt-0.5">
-                  {receivingProduct.name}
-                  {receivingVariant && <span className="font-bold text-primary"> — {receivingVariant.label || [receivingVariant.color, receivingVariant.storage, receivingVariant.ram, receivingVariant.condition].filter(Boolean).join(' • ')}</span>}
-                </p>
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[520px] animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="h-1 w-full bg-primary shrink-0" />
+            <form onSubmit={handleReceiveStock} className="p-7 space-y-5 overflow-y-auto no-scrollbar">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-[17px] font-bold text-navy">Receive Stock</h3>
+                  <p className="text-[12px] text-gray mt-0.5">
+                    {receivingProduct.name}
+                    {receivingVariant && <span className="font-bold text-primary"> — {receivingVariant.label || [receivingVariant.color, receivingVariant.storage, receivingVariant.ram, receivingVariant.condition].filter(Boolean).join(' • ')}</span>}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Quantity *</label>
-                  <input type="number" min={1} required value={receiveQty} onChange={e => setReceiveQty(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none" />
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={receiveQty}
+                    onChange={e => handleQtyChange(e.target.value)}
+                    className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
@@ -571,7 +614,7 @@ export const Inventory: React.FC = () => {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                <select value={receiveSupplier} onChange={e => setReceiveSupplier(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
+                <select value={receiveSupplier} onChange={e => handleSupplierChange(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
                   <option value="">Select supplier…</option>
                   {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -581,6 +624,34 @@ export const Inventory: React.FC = () => {
                 <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes</label>
                 <input value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="e.g. Promo batch, slightly used…" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
               </div>
+
+              {/* IMEI rows — only for variant products */}
+              {receivingVariant && receiveUnits.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">IMEI / Serial Numbers <span className="text-gray/50 normal-case font-normal">(optional)</span></label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {receiveUnits.map((unit, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray/60 w-8 shrink-0 text-center">#{i + 1}</span>
+                        <input
+                          value={unit.imei}
+                          onChange={e => setReceiveUnits(prev => prev.map((u, j) => j === i ? { ...u, imei: e.target.value } : u))}
+                          placeholder="IMEI / Serial No."
+                          className="flex-1 h-9 px-3 border border-border rounded-lg text-[12px] font-mono focus:border-primary outline-none bg-gray-50 min-w-0"
+                        />
+                        <select
+                          value={unit.supplier}
+                          onChange={e => setReceiveUnits(prev => prev.map((u, j) => j === i ? { ...u, supplier: e.target.value } : u))}
+                          className="h-9 px-2 border border-border rounded-lg text-[12px] focus:border-primary outline-none bg-gray-50 shrink-0 max-w-[130px]"
+                        >
+                          <option value="">Supplier</option>
+                          {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {receiveCostPrice && receiveSellPrice && Number(receiveCostPrice) > 0 && Number(receiveSellPrice) > 0 && (
                 <p className="text-[12px] font-bold text-emerald-600 flex items-center gap-2">
@@ -594,166 +665,6 @@ export const Inventory: React.FC = () => {
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
                 <button type="submit" className="flex-1 h-11 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">Receive {receiveQty} Units</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Product Sheet Overlay */}
-      {isEditSheetOpen && editingProduct && (
-        <div className="fixed inset-0 z-[100] flex justify-end">
-          <div className="absolute inset-0 bg-navy/40 backdrop-blur-[2px]" onClick={() => setIsEditSheetOpen(false)} />
-          <div className="relative w-full max-w-[560px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="p-6 border-b border-border flex items-center justify-between bg-gray-50/50">
-              <div>
-                <h2 className="text-lg font-bold text-navy">Quick Inventory Update</h2>
-                <p className="text-[12px] text-gray mt-0.5">Manage stock levels for {editingProduct.name}</p>
-              </div>
-              <button onClick={() => setIsEditSheetOpen(false)} className="p-2 text-gray hover:bg-gray-200 rounded-full transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateProduct} className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
-              <div className="space-y-6">
-                <h3 className="text-[11px] font-bold text-navy uppercase tracking-[0.15em] flex items-center gap-2">
-                  <Shield size={16} /> Product Information
-                </h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-1.5">
-                    <label className="text-[12px] font-bold text-navy">Selling Price (Base)</label>
-                    <input name="price" type="number" required defaultValue={editingProduct.price} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[12px] font-bold text-navy">Stock Threshold</label>
-                    <input name="threshold" type="number" required defaultValue={editingProduct.lowStockThreshold} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-                  </div>
-                  {editingVariants.length === 0 && (
-                    <div className="space-y-1.5 col-span-2">
-                      <label className="text-[12px] font-bold text-navy">Cost Price (What you paid)</label>
-                      <input name="costPrice" type="number" min={0} defaultValue={editingProduct.costPrice || ''} placeholder="0" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <h3 className="text-[11px] font-bold text-navy uppercase tracking-[0.15em] flex items-center justify-between">
-                  Stock per Variant
-                  <span className="text-primary font-black">{editingVariants.reduce((s, v) => s + v.stock, 0)} Total</span>
-                </h3>
-                
-                {editingVariants.length === 0 ? (
-                  <div className="space-y-1.5">
-                    <label className="text-[12px] font-bold text-navy">Current Stock</label>
-                    <input name="stock" type="number" required defaultValue={editingProduct.stock} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {editingVariants.map((v, i) => (
-                      <div key={i} className="bg-gray-50 border border-border rounded-2xl overflow-hidden">
-                        {/* Variant header + stock counter */}
-                        <div className="flex items-center justify-between p-4">
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[13px] font-bold text-navy">
-                              {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' • ')}
-                            </span>
-                            <span className="text-[11px] font-mono text-gray">{v.id}</span>
-                          </div>
-                          <div className="flex items-center bg-white border border-border rounded-xl p-1 shadow-sm shrink-0">
-                            <button type="button" onClick={() => handleVariantStockChange(i, v.stock - 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">-</button>
-                            <input
-                              type="number"
-                              value={v.stock}
-                              onChange={(e) => handleVariantStockChange(i, Number(e.target.value))}
-                              className="w-14 text-center text-[14px] font-black text-navy bg-transparent outline-none"
-                            />
-                            <button type="button" onClick={() => handleVariantStockChange(i, v.stock + 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">+</button>
-                          </div>
-                        </div>
-
-                        {/* Selling price + cost price per variant */}
-                        <div className="border-t border-border px-4 py-3 grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray uppercase tracking-widest">Selling Price (₦)</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={v.price ?? ''}
-                              onChange={e => updateVariantField(i, 'price', Number(e.target.value))}
-                              placeholder="0"
-                              className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray uppercase tracking-widest">Cost Price (₦)</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={v.costPrice ?? ''}
-                              onChange={e => updateVariantField(i, 'costPrice', Number(e.target.value))}
-                              placeholder="0"
-                              className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Unit rows — one per stock count */}
-                        {v.stock > 0 && (
-                          <div className="border-t border-border px-4 pb-4 pt-3 space-y-2">
-                            <p className="text-[10px] font-bold text-gray uppercase tracking-widest mb-2">Unit IMEI & Supplier</p>
-                            {(v.units || Array.from({ length: v.stock }, () => ({ imei: '', supplier: '' }))).slice(0, v.stock).map((unit, ui) => (
-                              <div key={ui} className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-gray w-12 shrink-0">Unit {ui + 1}</span>
-                                <input
-                                  value={unit.imei}
-                                  onChange={e => updateUnit(i, ui, 'imei', e.target.value)}
-                                  placeholder="IMEI / Serial"
-                                  className="flex-1 h-9 px-3 border border-border rounded-lg text-[12px] font-mono focus:border-primary outline-none bg-white min-w-0"
-                                />
-                                <select
-                                  value={unit.supplier || ''}
-                                  onChange={e => updateUnit(i, ui, 'supplier', e.target.value)}
-                                  className="h-9 px-2 border border-border rounded-lg text-[12px] focus:border-primary outline-none bg-white shrink-0 max-w-[130px]"
-                                >
-                                  <option value="">Supplier</option>
-                                  {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* Add new supplier inline */}
-                    <div className="flex gap-2 pt-1">
-                      <input
-                        value={newSupplierInput}
-                        onChange={e => setNewSupplierInput(e.target.value)}
-                        placeholder="Add new supplier to list..."
-                        className="flex-1 h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => { if (newSupplierInput.trim()) { try { await addSupplier(newSupplierInput.trim()); setNewSupplierInput('') } catch {} } }}
-                        className="px-4 h-9 border border-border rounded-lg text-[12px] font-bold text-gray hover:text-navy hover:border-gray-400 transition-colors shrink-0"
-                      >
-                        + Add Supplier
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <input type="hidden" name="name" value={editingProduct.name} />
-              <input type="hidden" name="brand" value={editingProduct.brand} />
-              <input type="hidden" name="description" value={editingProduct.description || ''} />
-
-              <div className="pt-6 border-t border-border flex gap-4 pb-8">
-                <button type="button" onClick={() => setIsEditSheetOpen(false)} className="flex-1 h-14 border border-border bg-white rounded-2xl font-bold text-[15px] hover:bg-gray-50 transition-all">Cancel</button>
-                <button type="submit" className="flex-1 h-14 bg-primary text-white rounded-2xl font-bold text-[15px] hover:bg-primary-dark transition-all shadow-xl shadow-primary/20">Commit Inventory</button>
               </div>
             </form>
           </div>
