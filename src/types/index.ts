@@ -7,6 +7,7 @@ export interface ProductVariant {
   condition: 'New' | 'Open Box' | 'Pre-owned'
   stock: number
   price?: number
+  imeis?: string[]  // tracked IMEI/serial numbers; stock = imeis.length when present
 }
 
 export interface Product {
@@ -35,6 +36,7 @@ export interface OrderItem {
   storage?: string
   condition?: string
   variantId?: string
+  imei?: string
 }
 
 export interface Installment {
@@ -81,6 +83,7 @@ export interface CartItem {
   product: Product
   quantity: number
   variant?: ProductVariant
+  imei?: string
 }
 
 export type StockStatus = 'in' | 'low' | 'out'

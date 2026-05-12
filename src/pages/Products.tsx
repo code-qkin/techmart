@@ -67,10 +67,24 @@ export const Products: React.FC = () => {
   const [selectedConditions, setSelectedConditions] = useState<ProductVariant['condition'][]>(['New'])
   const [showManualAdd, setShowManualAdd] = useState(false)
   const [manualForm, setManualForm] = useState<{ label: string; color: string; storage: string; ram: string; condition: ProductVariant['condition'] }>({ label: '', color: '', storage: '', ram: '', condition: 'New' })
+  const [storagePrices, setStoragePrices] = useState<Record<string, string>>({})
+  const [expandedImeiIdx, setExpandedImeiIdx] = useState<number | null>(null)
+  const [imeiInput, setImeiInput] = useState('')
 
   const categories = ['All', 'Phones', 'Laptops', 'Tablets', 'Accessories']
-  const colorOptions = ['Black', 'White', 'Silver', 'Gold', 'Graphite', 'Blue', 'Green', 'Red', 'Grey', 'Midnight', 'Starlight', 'Natural Titanium']
-  const storageOptions = ['64GB', '128GB', '256GB', '512GB', '1TB', '2TB']
+  const colorOptions = [
+    // Standard
+    'Black', 'White', 'Silver', 'Gold', 'Grey', 'Red',
+    // Apple — iPhone 16 / 16 Pro
+    'Teal', 'Ultramarine', 'Pink',
+    // Apple — iPhone 15 Pro
+    'Natural Titanium', 'Blue Titanium', 'White Titanium', 'Black Titanium', 'Desert Titanium',
+    // Apple — iPhone 14 / 13 era
+    'Midnight', 'Starlight', 'Purple', 'Yellow', 'Blue', 'Green', 'Product Red',
+    // Apple — older / MacBook
+    'Space Gray', 'Rose Gold', 'Jet Black', 'Graphite', 'Sky Blue', 'Coral', 'Lavender', 'Cream', 'Orange',
+  ]
+  const storageOptions = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB', '2TB']
   const ramOptions = ['4GB', '6GB', '8GB', '12GB', '16GB', '32GB', '64GB']
   const conditionOptions: ProductVariant['condition'][] = ['New', 'Open Box', 'Pre-owned']
 
@@ -92,7 +106,12 @@ export const Products: React.FC = () => {
     setSelectedStorages(storages)
     setSelectedRAMs(rams)
     setSelectedConditions(conditions.length > 0 ? conditions : ['New'])
-    
+
+    // Restore storage→price map from existing variants
+    const prices: Record<string, string> = {}
+    product.variants?.forEach(v => { if (v.storage && v.price) prices[v.storage] = String(v.price) })
+    setStoragePrices(prices)
+
     setActiveTab('general')
     setIsAddSheetOpen(true)
   }
@@ -112,6 +131,9 @@ export const Products: React.FC = () => {
     setSelectedConditions(['New'])
     setShowManualAdd(false)
     setManualForm({ label: '', color: '', storage: '', ram: '', condition: 'New' })
+    setStoragePrices({})
+    setExpandedImeiIdx(null)
+    setImeiInput('')
     setActiveTab('general')
   }
 
@@ -132,7 +154,8 @@ export const Products: React.FC = () => {
       colors.forEach(color => {
         storages.forEach(storage => {
           rams.forEach(ram => {
-            newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, color, storage, ram, condition, stock: 0 })
+            const price = storage && storagePrices[storage] ? Number(storagePrices[storage]) : undefined
+            newVariants.push({ id: `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`, color, storage, ram, condition, stock: 0, price })
           })
         })
       })
@@ -176,6 +199,29 @@ export const Products: React.FC = () => {
     setProductVariants(updated)
   }
 
+  const addImei = (variantIndex: number) => {
+    const imei = imeiInput.trim()
+    if (!imei) return
+    setProductVariants(prev => {
+      const updated = [...prev]
+      const existing = updated[variantIndex].imeis || []
+      if (existing.includes(imei)) return prev
+      const imeis = [...existing, imei]
+      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
+      return updated
+    })
+    setImeiInput('')
+  }
+
+  const removeImei = (variantIndex: number, imei: string) => {
+    setProductVariants(prev => {
+      const updated = [...prev]
+      const imeis = (updated[variantIndex].imeis || []).filter(i => i !== imei)
+      updated[variantIndex] = { ...updated[variantIndex], imeis, stock: imeis.length }
+      return updated
+    })
+  }
+
   const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
@@ -193,11 +239,12 @@ export const Products: React.FC = () => {
              formCategory === 'Laptops' ? '💻' :
              formCategory === 'Tablets' ? '📟' : '🎧',
       description: formDescription,
-      variants: productVariants.map(v => ({
-        ...v,
-        // Preserve stock from existing variants if ID matches
-        stock: editingProduct?.variants?.find(ev => ev.id === v.id)?.stock || 0
-      })),
+      variants: productVariants.map(v => {
+        const existing = editingProduct?.variants?.find(ev => ev.id === v.id)
+        const imeis = v.imeis ?? existing?.imeis ?? []
+        const stock = imeis.length > 0 ? imeis.length : (existing?.stock || v.stock || 0)
+        return { ...v, imeis: imeis.length > 0 ? imeis : undefined, stock }
+      }),
       createdAt: editingProduct?.createdAt || new Date().toISOString(),
     }
 
@@ -488,6 +535,27 @@ export const Products: React.FC = () => {
                               <button key={s} type="button" onClick={() => setSelectedStorages(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} className={cn("px-3 py-1 rounded-lg text-[11px] font-bold border transition-all", selectedStorages.includes(s) ? "bg-primary border-primary text-white" : "bg-white border-border text-gray hover:border-gray-400")}>{s}</button>
                             ))}
                           </div>
+                          {/* Price per storage */}
+                          {selectedStorages.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Set price per storage — auto-fills variants</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {selectedStorages.map(s => (
+                                  <div key={s} className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 h-9">
+                                    <span className="text-[11px] font-bold text-navy w-12 shrink-0">{s}</span>
+                                    <span className="text-gray text-[12px]">₦</span>
+                                    <input
+                                      type="number"
+                                      placeholder="Price"
+                                      value={storagePrices[s] || ''}
+                                      onChange={e => setStoragePrices(p => ({ ...p, [s]: e.target.value }))}
+                                      className="flex-1 text-[13px] font-bold text-primary outline-none bg-transparent min-w-0"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="space-y-2">
@@ -528,26 +596,68 @@ export const Products: React.FC = () => {
 
                       <div className="space-y-2">
                         {productVariants.map((v, i) => (
-                          <div key={i} className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl shadow-sm hover:border-primary/30 transition-all group">
-                            <div className="flex-1 grid grid-cols-3 gap-4 items-center">
-                              <div className="col-span-1">
-                                <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Variant</span>
-                                <span className="text-[12px] font-bold text-navy line-clamp-1">
-                                  {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' ')}
-                                </span>
+                          <div key={i} className="bg-white border border-border rounded-xl shadow-sm hover:border-primary/30 transition-all">
+                            <div className="flex items-center gap-3 p-4">
+                              <div className="flex-1 grid grid-cols-3 gap-4 items-center">
+                                <div className="col-span-1">
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Variant</span>
+                                  <span className="text-[12px] font-bold text-navy line-clamp-1">
+                                    {v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' ')}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU / ID</span>
+                                  <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[12px] font-mono text-primary bg-transparent focus:underline outline-none" />
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Price (₦)</span>
+                                  <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="Optional" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">SKU / ID</span>
-                                <input value={v.id} onChange={(e) => updateVariant(i, 'id', e.target.value)} className="w-full text-[12px] font-mono text-primary bg-transparent focus:underline outline-none" />
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-gray uppercase block mb-0.5">Price Override</span>
-                                <input type="number" value={v.price || ''} onChange={(e) => updateVariant(i, 'price', Number(e.target.value))} placeholder="Optional" className="w-full text-[13px] font-bold text-primary bg-transparent outline-none border-b border-transparent focus:border-primary" />
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => { setExpandedImeiIdx(expandedImeiIdx === i ? null : i); setImeiInput('') }}
+                                  className={cn("px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-colors",
+                                    expandedImeiIdx === i ? "bg-primary text-white" : "bg-gray-100 text-gray hover:bg-gray-200"
+                                  )}
+                                >
+                                  IMEI {v.imeis?.length ? `(${v.imeis.length})` : ''}
+                                </button>
+                                <button type="button" onClick={() => setProductVariants(prev => prev.filter((_, idx) => idx !== i))} className="p-2 text-gray/40 hover:text-red-500 transition-colors">
+                                  <Trash2 size={16} />
+                                </button>
                               </div>
                             </div>
-                            <button type="button" onClick={() => setProductVariants(prev => prev.filter((_, idx) => idx !== i))} className="p-2 text-gray/40 hover:text-red-500 transition-colors">
-                              <Trash2 size={16} />
-                            </button>
+
+                            {/* IMEI Panel */}
+                            {expandedImeiIdx === i && (
+                              <div className="px-4 pb-4 space-y-3 border-t border-border pt-3 animate-in fade-in duration-150">
+                                <p className="text-[10px] font-bold text-gray uppercase tracking-widest">IMEI / Serial Numbers — stock auto-updates</p>
+                                <div className="flex gap-2">
+                                  <input
+                                    value={imeiInput}
+                                    onChange={e => setImeiInput(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addImei(i) } }}
+                                    placeholder="Type IMEI and press Enter or Add"
+                                    className="flex-1 h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none"
+                                  />
+                                  <button type="button" onClick={() => addImei(i)} className="px-4 h-9 bg-primary text-white rounded-lg font-bold text-[12px] hover:bg-primary-dark transition-colors">Add</button>
+                                </div>
+                                {v.imeis && v.imeis.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {v.imeis.map(imei => (
+                                      <span key={imei} className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-md text-[11px] font-mono text-navy">
+                                        {imei}
+                                        <button type="button" onClick={() => removeImei(i, imei)} className="text-gray/50 hover:text-red-500 ml-0.5">×</button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-gray">No IMEIs added yet.</p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

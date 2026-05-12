@@ -79,11 +79,15 @@ export const useOrders = () => {
             .single()
 
           if (product?.variants) {
-            const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) =>
-              v.id === item.variantId
-                ? { ...v, stock: Math.max(0, (v.stock as number) - item.quantity) }
-                : v
-            )
+            const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) => {
+              if (v.id !== item.variantId) return v
+              // If this sale has an IMEI, remove that specific unit from the imeis array
+              if (item.imei && Array.isArray(v.imeis)) {
+                const imeis = (v.imeis as string[]).filter(i => i !== item.imei)
+                return { ...v, imeis, stock: imeis.length }
+              }
+              return { ...v, stock: Math.max(0, (v.stock as number) - item.quantity) }
+            })
             await supabase
               .from('products')
               .update({ variants: updatedVariants })
@@ -136,11 +140,15 @@ export const useOrders = () => {
             .single()
 
           if (product?.variants) {
-            const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) =>
-              v.id === item.variantId
-                ? { ...v, stock: (v.stock as number) + item.quantity }
-                : v
-            )
+            const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) => {
+              if (v.id !== item.variantId) return v
+              // Restore the IMEI back to the imeis array on return
+              if (item.imei && Array.isArray(v.imeis)) {
+                const imeis = [...(v.imeis as string[]), item.imei]
+                return { ...v, imeis, stock: imeis.length }
+              }
+              return { ...v, stock: (v.stock as number) + item.quantity }
+            })
             await supabase.from('products').update({ variants: updatedVariants }).eq('id', item.productId)
           }
         } else {
