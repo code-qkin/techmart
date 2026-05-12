@@ -13,7 +13,8 @@ import {
   BarChart2,
   Receipt,
   Shield,
-  Truck
+  Truck,
+  Archive
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useSidebarStore } from '../../store/sidebarStore'
@@ -25,6 +26,7 @@ const navItems = [
   { label: 'Products', icon: Smartphone, path: '/products' },
   { label: 'Inventory', icon: Layers, path: '/inventory' },
   { label: 'Suppliers', icon: Truck, path: '/suppliers' },
+  { label: 'Batches', icon: Archive, path: '/batches' },
   { label: 'Orders', icon: ShoppingBag, path: '/orders' },
   { label: 'Customers', icon: UserCheck, path: '/customers' },
   { label: 'Reports', icon: BarChart2, path: '/reports', adminOnly: true },
