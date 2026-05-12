@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
 import { PageHeader } from '../components/shared/PageHeader'
-import { useSuppliersStore } from '../store/suppliersStore'
+import { useSuppliers } from '../hooks/useSuppliers'
 import { Plus, Trash2, Truck, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '../lib/utils'
 
 export const Suppliers: React.FC = () => {
-  const { suppliers, addSupplier, removeSupplier } = useSuppliersStore()
+  const { suppliers, addSupplier, removeSupplier } = useSuppliers()
   const [newName, setNewName] = useState('')
   const [search, setSearch] = useState('')
   const [deletingName, setDeletingName] = useState<string | null>(null)
@@ -15,22 +15,30 @@ export const Suppliers: React.FC = () => {
     s.toLowerCase().includes(search.toLowerCase())
   )
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const name = newName.trim()
     if (!name) return
     if (suppliers.some((s) => s.toLowerCase() === name.toLowerCase())) {
       toast.error('A supplier with that name already exists')
       return
     }
-    addSupplier(name)
-    setNewName('')
-    toast.success(`"${name}" added`)
+    try {
+      await addSupplier(name)
+      setNewName('')
+      toast.success(`"${name}" added`)
+    } catch {
+      toast.error('Failed to add supplier')
+    }
   }
 
-  const handleDelete = (name: string) => {
-    removeSupplier(name)
-    setDeletingName(null)
-    toast.success(`"${name}" removed`)
+  const handleDelete = async (name: string) => {
+    try {
+      await removeSupplier(name)
+      setDeletingName(null)
+      toast.success(`"${name}" removed`)
+    } catch {
+      toast.error('Failed to remove supplier')
+    }
   }
 
   return (

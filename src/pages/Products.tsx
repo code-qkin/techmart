@@ -5,7 +5,7 @@ import { FAB } from '../components/shared/FAB'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { useProducts } from '../hooks/useProducts'
 import { formatNaira, getErrorMessage } from '../lib/utils'
-import { useSuppliersStore } from '../store/suppliersStore'
+import { useSuppliers } from '../hooks/useSuppliers'
 import { 
   Plus, 
   Search, 
@@ -47,7 +47,7 @@ const getCategoryIcon = (category: string, name: string = '', size: number = 24)
 
 export const Products: React.FC = () => {
   const { products, isLoading, addProduct, updateProduct, deleteProduct } = useProducts()
-  const { suppliers } = useSuppliersStore()
+  const { suppliers } = useSuppliers()
   const [filter, setFilter] = useState('All')
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false)

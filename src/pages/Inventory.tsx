@@ -31,7 +31,7 @@ import {
   EyeOff
 } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
-import { useSuppliersStore } from '../store/suppliersStore'
+import { useSuppliers } from '../hooks/useSuppliers'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant, VariantUnit } from '../types'
@@ -58,7 +58,7 @@ export const Inventory: React.FC = () => {
   const { inventory, isLoading, updateStock } = useInventory()
   const { updateProduct } = useProducts()
   const { isHidden, toggle } = usePrivacyStore()
-  const { suppliers, addSupplier } = useSuppliersStore()
+  const { suppliers, addSupplier } = useSuppliers()
   const [newSupplierInput, setNewSupplierInput] = useState('')
   const [filter, setFilter] = useState('All Items')
   const [searchQuery, setSearchQuery] = useState('')
@@ -601,7 +601,7 @@ export const Inventory: React.FC = () => {
                       />
                       <button
                         type="button"
-                        onClick={() => { if (newSupplierInput.trim()) { addSupplier(newSupplierInput); setNewSupplierInput('') } }}
+                        onClick={async () => { if (newSupplierInput.trim()) { try { await addSupplier(newSupplierInput.trim()); setNewSupplierInput('') } catch {} } }}
                         className="px-4 h-9 border border-border rounded-lg text-[12px] font-bold text-gray hover:text-navy hover:border-gray-400 transition-colors shrink-0"
                       >
                         + Add Supplier
