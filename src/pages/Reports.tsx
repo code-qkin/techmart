@@ -65,13 +65,24 @@ export const Reports: React.FC = () => {
   const totalExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + e.amount, 0), [filteredExpenses])
   const totalOrders = salesOrders.length
 
-  // Daily revenue chart (completed sales only)
+  const totalCOGS = useMemo(() =>
+    salesOrders.reduce((s, o) =>
+      s + o.items.reduce((is, item) => is + (item.costPrice || 0) * item.quantity, 0), 0),
+    [salesOrders])
+
+  const grossProfit = totalRevenue - totalCOGS
+  const profitMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
+  const hasCostData = totalCOGS > 0
+
+  // Daily revenue + profit chart (completed sales only)
   const dailyData = useMemo(() => {
-    const map: Record<string, { date: string; revenue: number; orders: number }> = {}
+    const map: Record<string, { date: string; revenue: number; profit: number; orders: number }> = {}
     salesOrders.forEach((o) => {
       const day = o.createdAt.slice(0, 10)
-      if (!map[day]) map[day] = { date: day, revenue: 0, orders: 0 }
+      if (!map[day]) map[day] = { date: day, revenue: 0, profit: 0, orders: 0 }
+      const orderCOGS = o.items.reduce((s, item) => s + (item.costPrice || 0) * item.quantity, 0)
       map[day].revenue += o.totalAmount
+      map[day].profit += o.totalAmount - orderCOGS
       map[day].orders += 1
     })
     return Object.values(map)
@@ -84,16 +95,24 @@ export const Reports: React.FC = () => {
 
   // Top products (completed sales only)
   const topProducts = useMemo(() => {
-    const map: Record<string, { name: string; qty: number; revenue: number }> = {}
+    const map: Record<string, { name: string; qty: number; revenue: number; cogs: number }> = {}
     salesOrders.forEach((o) =>
       o.items.forEach((item) => {
         const key = item.productId
-        if (!map[key]) map[key] = { name: item.productName.split(' (')[0], qty: 0, revenue: 0 }
+        if (!map[key]) map[key] = { name: item.productName.split(' (')[0], qty: 0, revenue: 0, cogs: 0 }
         map[key].qty += item.quantity
         map[key].revenue += item.subtotal
+        map[key].cogs += (item.costPrice || 0) * item.quantity
       })
     )
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5)
+    return Object.values(map)
+      .map(p => ({
+        ...p,
+        profit: p.revenue - p.cogs,
+        margin: p.revenue > 0 ? ((p.revenue - p.cogs) / p.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5)
   }, [salesOrders])
 
   // Payment method breakdown (completed sales only)
@@ -195,11 +214,12 @@ export const Reports: React.FC = () => {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Gross Revenue', value: maskAmount(formatNaira(totalRevenue), isHidden), icon: TrendingUp, color: 'bg-primary/10 text-primary', sub: `${totalOrders} completed orders` },
-          { label: 'Refunds & Returns', value: maskAmount(formatNaira(totalRefunds), isHidden), icon: TrendingDown, color: 'bg-purple-100 text-purple-600', sub: `${refundedOrders.length} order${refundedOrders.length !== 1 ? 's' : ''}` },
-          { label: 'Total Expenses', value: maskAmount(formatNaira(totalExpenses), isHidden), icon: TrendingDown, color: 'bg-warning/10 text-warning', sub: `${filteredExpenses.length} entries` },
+          { label: 'Cost of Goods', value: hasCostData ? maskAmount(formatNaira(totalCOGS), isHidden) : '—', icon: TrendingDown, color: 'bg-orange-100 text-orange-600', sub: hasCostData ? `${Math.round((totalCOGS / totalRevenue) * 100)}% of revenue` : 'Set cost prices in Inventory' },
+          { label: 'Gross Profit', value: hasCostData ? maskAmount(formatNaira(grossProfit), isHidden) : '—', icon: TrendingUp, color: grossProfit >= 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600', sub: hasCostData ? `${profitMargin.toFixed(1)}% margin` : 'Set cost prices in Inventory' },
+          { label: 'Net Profit', value: hasCostData ? maskAmount(formatNaira(grossProfit - totalExpenses), isHidden) : '—', icon: grossProfit - totalExpenses >= 0 ? TrendingUp : TrendingDown, color: grossProfit - totalExpenses >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600', sub: hasCostData ? `After ${formatNaira(totalExpenses)} expenses` : 'Set cost prices in Inventory' },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
             <div className="flex items-center gap-3">
@@ -216,9 +236,36 @@ export const Reports: React.FC = () => {
         ))}
       </div>
 
-      {/* Revenue Timeline */}
+      {/* Refunds + Expenses summary row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[
+          { label: 'Refunds & Returns', value: maskAmount(formatNaira(totalRefunds), isHidden), icon: TrendingDown, color: 'bg-purple-100 text-purple-600', sub: `${refundedOrders.length} order${refundedOrders.length !== 1 ? 's' : ''}` },
+          { label: 'Total Expenses', value: maskAmount(formatNaira(totalExpenses), isHidden), icon: TrendingDown, color: 'bg-warning/10 text-warning', sub: `${filteredExpenses.length} entries` },
+        ].map((s) => (
+          <div key={s.label} className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
+            <div className={cn('w-10 h-10 rounded-md flex items-center justify-center shrink-0', s.color)}>
+              <s.icon size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gray uppercase tracking-wide font-semibold">{s.label}</p>
+              <p className="text-lg font-bold text-navy leading-tight">{s.value}</p>
+              <p className="text-[11px] text-gray mt-0.5">{s.sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Revenue + Profit Timeline */}
       <div className="bg-card border border-border rounded-lg p-5">
-        <h3 className="text-[15px] font-bold text-navy mb-6">Revenue Timeline</h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-[15px] font-bold text-navy">Revenue & Profit Timeline</h3>
+          {hasCostData && (
+            <div className="flex items-center gap-4 text-[11px] font-bold">
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-primary rounded" />Revenue</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-emerald-500 rounded" />Gross Profit</span>
+            </div>
+          )}
+        </div>
         {dailyData.length === 0 ? (
           <div className="h-[220px] flex items-center justify-center text-gray text-[13px]">No data for selected range</div>
         ) : (
@@ -230,9 +277,10 @@ export const Reports: React.FC = () => {
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6B7280' }} tickFormatter={(v) => `₦${v / 1000}k`} />
                 <Tooltip
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
-                  formatter={(v) => [formatNaira(Number(v)), 'Revenue']}
+                  formatter={(v, name) => [formatNaira(Number(v)), name === 'revenue' ? 'Revenue' : 'Gross Profit']}
                 />
                 <Line type="monotone" dataKey="revenue" stroke="#E63946" strokeWidth={2} dot={false} />
+                {hasCostData && <Line type="monotone" dataKey="profit" stroke="#10B981" strokeWidth={2} dot={false} strokeDasharray="4 2" />}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -247,15 +295,34 @@ export const Reports: React.FC = () => {
           {topProducts.length === 0 ? (
             <p className="text-gray text-[13px]">No data</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-0 divide-y divide-border">
+              {hasCostData && (
+                <div className="flex items-center gap-4 pb-2">
+                  <span className="w-4" />
+                  <span className="flex-1 text-[10px] font-bold text-gray uppercase tracking-widest">Product</span>
+                  <span className="text-[10px] font-bold text-gray uppercase tracking-widest w-20 text-right">Revenue</span>
+                  <span className="text-[10px] font-bold text-gray uppercase tracking-widest w-20 text-right">Profit</span>
+                  <span className="text-[10px] font-bold text-gray uppercase tracking-widest w-14 text-right">Margin</span>
+                </div>
+              )}
               {topProducts.map((p, i) => (
-                <div key={i} className="flex items-center gap-4">
+                <div key={i} className="flex items-center gap-4 py-3">
                   <span className="text-[11px] font-bold text-gray w-4">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-bold text-navy truncate">{p.name}</p>
                     <p className="text-[11px] text-gray">{p.qty} unit{p.qty !== 1 ? 's' : ''} sold</p>
                   </div>
-                  <span className="text-[13px] font-bold text-primary shrink-0">{maskAmount(formatNaira(p.revenue), isHidden)}</span>
+                  <span className="text-[13px] font-bold text-primary shrink-0 w-20 text-right">{maskAmount(formatNaira(p.revenue), isHidden)}</span>
+                  {hasCostData && (
+                    <>
+                      <span className={cn('text-[13px] font-bold shrink-0 w-20 text-right', p.profit >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                        {maskAmount(formatNaira(p.profit), isHidden)}
+                      </span>
+                      <span className={cn('text-[12px] font-bold shrink-0 w-14 text-right', p.margin >= 20 ? 'text-emerald-600' : p.margin >= 10 ? 'text-amber-600' : 'text-red-500')}>
+                        {p.cogs > 0 ? `${p.margin.toFixed(1)}%` : '—'}
+                      </span>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

@@ -12,6 +12,7 @@ export interface ProductVariant {
   condition: 'New' | 'Open Box' | 'Pre-owned'
   stock: number
   price?: number
+  costPrice?: number
   units?: VariantUnit[]  // per-unit IMEI + supplier tracking
 }
 
@@ -21,6 +22,7 @@ export interface Product {
   category: 'Phones' | 'Laptops' | 'Tablets' | 'Accessories'
   brand: string
   price: number
+  costPrice?: number
   stock: number
   lowStockThreshold: number
   imageUrl?: string
@@ -36,6 +38,7 @@ export interface OrderItem {
   productName: string
   quantity: number
   unitPrice: number
+  costPrice?: number
   subtotal: number
   color?: string
   storage?: string

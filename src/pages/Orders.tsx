@@ -220,6 +220,7 @@ export const Orders: React.FC = () => {
         storage: item.variant?.storage,
         condition: item.variant?.condition,
         variantId: item.variant?.id,
+        costPrice: item.variant?.costPrice ?? item.product.costPrice,
         imei: item.unit?.imei,
         supplier: item.unit?.supplier,
       })),

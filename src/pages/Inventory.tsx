@@ -97,6 +97,14 @@ export const Inventory: React.FC = () => {
     })
   }
 
+  const updateVariantField = (variantIndex: number, field: 'price' | 'costPrice', value: number) => {
+    setEditingVariants(prev => {
+      const updated = [...prev]
+      updated[variantIndex] = { ...updated[variantIndex], [field]: value || undefined }
+      return updated
+    })
+  }
+
   const updateUnit = (variantIndex: number, unitIndex: number, field: keyof VariantUnit, value: string) => {
     setEditingVariants(prev => {
       const updated = [...prev]
@@ -121,6 +129,7 @@ export const Inventory: React.FC = () => {
       name: formData.get('name') as string,
       brand: formData.get('brand') as string,
       price: Number(formData.get('price')),
+      costPrice: Number(formData.get('costPrice')) || undefined,
       stock: editingVariants.length > 0 ? totalStock : Number(formData.get('stock')),
       lowStockThreshold: Number(formData.get('threshold')),
       description: formData.get('description') as string,
@@ -484,6 +493,12 @@ export const Inventory: React.FC = () => {
                     <label className="text-[12px] font-bold text-navy">Stock Threshold</label>
                     <input name="threshold" type="number" required defaultValue={editingProduct.lowStockThreshold} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
                   </div>
+                  {editingVariants.length === 0 && (
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-[12px] font-bold text-navy">Cost Price (What you paid)</label>
+                      <input name="costPrice" type="number" min={0} defaultValue={editingProduct.costPrice || ''} placeholder="0" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -519,6 +534,32 @@ export const Inventory: React.FC = () => {
                               className="w-14 text-center text-[14px] font-black text-navy bg-transparent outline-none"
                             />
                             <button type="button" onClick={() => handleVariantStockChange(i, v.stock + 1)} className="w-8 h-8 flex items-center justify-center text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-all">+</button>
+                          </div>
+                        </div>
+
+                        {/* Selling price + cost price per variant */}
+                        <div className="border-t border-border px-4 py-3 grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray uppercase tracking-widest">Selling Price (₦)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={v.price ?? ''}
+                              onChange={e => updateVariantField(i, 'price', Number(e.target.value))}
+                              placeholder="0"
+                              className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray uppercase tracking-widest">Cost Price (₦)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={v.costPrice ?? ''}
+                              onChange={e => updateVariantField(i, 'costPrice', Number(e.target.value))}
+                              placeholder="0"
+                              className="w-full h-9 px-3 border border-border rounded-lg text-[13px] focus:border-primary outline-none bg-white"
+                            />
                           </div>
                         </div>
 
