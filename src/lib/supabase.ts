@@ -10,6 +10,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // and auto-confirms users without sending emails.
 export const adminSupabase = supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
+      auth: { autoRefreshToken: false, persistSession: false, storageKey: 'techmart-admin-auth' },
     })
   : null
