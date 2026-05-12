@@ -12,7 +12,8 @@ import {
   UserCheck,
   BarChart2,
   Receipt,
-  Shield
+  Shield,
+  Truck
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useSidebarStore } from '../../store/sidebarStore'
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { label: 'Products', icon: Smartphone, path: '/products' },
   { label: 'Inventory', icon: Layers, path: '/inventory' },
+  { label: 'Suppliers', icon: Truck, path: '/suppliers' },
   { label: 'Orders', icon: ShoppingBag, path: '/orders' },
   { label: 'Customers', icon: UserCheck, path: '/customers' },
   { label: 'Reports', icon: BarChart2, path: '/reports', adminOnly: true },
