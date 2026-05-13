@@ -204,7 +204,10 @@ export const Suppliers: React.FC = () => {
                 if (p.variants?.length) return sum + p.variants.reduce((s, v) => s + v.stock, 0)
                 return sum + p.stock
               }, 0)
-              const totalBatches = batches.filter(b => b.supplier === name).length
+              const totalVariants = supplierProducts.reduce((sum, p) => {
+                if (p.variants?.length) return sum + getSuppliedVariants(name, p.id, p.variants).length
+                return sum + (batches.some(b => b.supplier === name && b.productId === p.id) ? 1 : 0)
+              }, 0)
 
               return (
                 <li key={name} className="group">
@@ -248,7 +251,7 @@ export const Suppliers: React.FC = () => {
                             {supplierProducts.length === 0 ? 'no products' : `${supplierProducts.length} product${supplierProducts.length !== 1 ? 's' : ''}`}
                           </span>
                           {totalUnits > 0 && <span className="text-[11px] text-gray/40">{totalUnits} units in stock</span>}
-                          {totalBatches > 0 && <span className="text-[11px] text-gray/40">{totalBatches} batch{totalBatches !== 1 ? 'es' : ''}</span>}
+                          {totalVariants > 0 && <span className="text-[11px] text-gray/40">{totalVariants} variant{totalVariants !== 1 ? 's' : ''}</span>}
                         </div>
                       </div>
                       <span className="text-gray/30 shrink-0 mt-2">
@@ -317,7 +320,11 @@ export const Suppliers: React.FC = () => {
                               </div>
                               {totalReceived > 0 && (
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[11px] text-gray/50 font-medium">{supplierBatchList.length} batch{supplierBatchList.length !== 1 ? 'es' : ''}</span>
+                                  {suppliedVariants.length > 0 ? (
+                                    <span className="text-[11px] text-gray/50 font-medium">{suppliedVariants.length} variant{suppliedVariants.length !== 1 ? 's' : ''}</span>
+                                  ) : (
+                                    <span className="text-[11px] text-gray/50 font-medium">{supplierBatchList.length} deliver{supplierBatchList.length !== 1 ? 'ies' : 'y'}</span>
+                                  )}
                                   <span className="text-[11px] font-bold text-navy bg-gray-100 px-2 py-0.5 rounded-full">{totalReceived} received</span>
                                   <span className="text-[11px] font-bold text-primary bg-primary/5 border border-primary/10 px-2 py-0.5 rounded-full">{totalRemaining} remaining</span>
                                 </div>
@@ -403,7 +410,7 @@ export const Suppliers: React.FC = () => {
                                           )}
                                           {variantBatches.length > 0 && (
                                             <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-                                              <p className="text-[10px] font-bold text-gray/50 uppercase tracking-widest mb-1.5">Batch history</p>
+                                              <p className="text-[10px] font-bold text-gray/50 uppercase tracking-widest mb-1.5">Delivery history</p>
                                               {variantBatches.map(b => (
                                                 <div key={b.id} className="flex items-center justify-between text-[11px]">
                                                   <span className="text-gray/60">{new Date(b.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -453,7 +460,7 @@ export const Suppliers: React.FC = () => {
 
                             {supplierBatchList.length > 0 && suppliedVariants.length === 0 && (
                               <div className="border-t border-gray-100 px-4 py-3">
-                                <p className="text-[10px] font-bold text-gray/50 uppercase tracking-widest mb-2">Batch history</p>
+                                <p className="text-[10px] font-bold text-gray/50 uppercase tracking-widest mb-2">Delivery history</p>
                                 <div className="space-y-1">
                                   {supplierBatchList.slice(0, 5).map(b => (
                                     <div key={b.id} className="flex items-center justify-between text-[11px]">
@@ -465,7 +472,7 @@ export const Suppliers: React.FC = () => {
                                     </div>
                                   ))}
                                   {supplierBatchList.length > 5 && (
-                                    <p className="text-[10px] text-gray/40 italic">+{supplierBatchList.length - 5} more batches</p>
+                                    <p className="text-[10px] text-gray/40 italic">+{supplierBatchList.length - 5} more deliveries</p>
                                   )}
                                 </div>
                               </div>
