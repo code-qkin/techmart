@@ -100,8 +100,8 @@ export const Batches: React.FC = () => {
   }, [])
 
   const itemCount = useMemo(() => lineItems.reduce((sum, l) => {
-    if (l.variantLines.length > 0) return sum + l.variantLines.filter(vl => Number(vl.quantity) > 0 && vl.costPrice).length
-    return sum + (l.productId && l.quantity && l.costPrice ? 1 : 0)
+    if (l.variantLines.length > 0) return sum + l.variantLines.filter(vl => Number(vl.quantity) > 0).length
+    return sum + (l.productId && Number(l.quantity) > 0 ? 1 : 0)
   }, 0), [lineItems])
 
   const totalUnitsToReceive = useMemo(() => lineItems.reduce((sum, l) => {
@@ -118,25 +118,25 @@ export const Batches: React.FC = () => {
     try {
       for (const line of lineItems) {
         if (line.variantLines.length > 0) {
-          for (const vl of line.variantLines.filter(vl => Number(vl.quantity) > 0 && vl.costPrice)) {
+          for (const vl of line.variantLines.filter(vl => Number(vl.quantity) > 0)) {
             await receiveBatch({
               productId: line.productId,
               variantId: vl.variantId,
               supplier: multiSupplier || undefined,
               quantity: Number(vl.quantity),
-              costPrice: Number(vl.costPrice),
+              costPrice: Number(vl.costPrice) || 0,
               sellPrice: Number(vl.sellPrice) || undefined,
               notes: multiNotes || undefined,
               receivedAt: new Date(multiDate).toISOString(),
               deliveryId,
             })
           }
-        } else if (line.productId && line.quantity && line.costPrice) {
+        } else if (line.productId && Number(line.quantity) > 0) {
           await receiveBatch({
             productId: line.productId,
             supplier: multiSupplier || undefined,
             quantity: Number(line.quantity),
-            costPrice: Number(line.costPrice),
+            costPrice: Number(line.costPrice) || 0,
             sellPrice: Number(line.sellPrice) || undefined,
             notes: multiNotes || undefined,
             receivedAt: new Date(multiDate).toISOString(),
