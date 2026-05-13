@@ -6,44 +6,21 @@ import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { useProducts } from '../hooks/useProducts'
 import { formatNaira, getErrorMessage } from '../lib/utils'
 import { useSuppliers } from '../hooks/useSuppliers'
-import { 
-  Plus, 
-  Search, 
-  LayoutGrid, 
+import {
+  Plus,
+  Search,
+  LayoutGrid,
   Table as TableIcon,
   X,
   Edit,
   Trash2,
-  Smartphone,
-  Laptop,
-  Tablet,
-  Headphones,
-  Gamepad2,
-  Watch,
-  Speaker,
-  MousePointer2
 } from 'lucide-react'
+import { getProductIcon } from '../lib/productIcon'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant } from '../types'
 import { toast } from 'sonner'
 
-// Icon mapping helper
-const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
-  const props = { size, className: "shrink-0" }
-  if (category === 'Phones') return <Smartphone {...props} />
-  if (category === 'Laptops') return <Laptop {...props} />
-  if (category === 'Tablets') return <Tablet {...props} />
-  
-  const lowName = (name || '').toLowerCase()
-  if (lowName.includes('watch')) return <Watch {...props} />
-  if (lowName.includes('ear') || lowName.includes('airpod') || lowName.includes('headphone')) return <Headphones {...props} />
-  if (lowName.includes('game') || lowName.includes('play')) return <Gamepad2 {...props} />
-  if (lowName.includes('speak')) return <Speaker {...props} />
-  if (lowName.includes('mouse')) return <MousePointer2 {...props} />
-  
-  return <Headphones {...props} />
-}
 
 export const Products: React.FC = () => {
   const { products, isLoading, addProduct, updateProduct, deleteProduct } = useProducts()
@@ -286,7 +263,7 @@ export const Products: React.FC = () => {
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary/5 rounded-lg flex items-center justify-center text-primary shrink-0 border border-primary/10">
-            {getCategoryIcon(row.original.category, row.original.name, 18)}
+            {getProductIcon(row.original.category, row.original.name, 18)}
           </div>
           <div className="flex flex-col text-left">
             <span className="font-bold text-navy">{row.original.name}</span>
@@ -416,7 +393,7 @@ export const Products: React.FC = () => {
               className="bg-white p-6 rounded-2xl border border-border flex flex-col items-center text-center group hover:border-primary hover:shadow-xl hover:shadow-primary/5 transition-all cursor-pointer relative overflow-hidden"
             >
               <div className="w-24 h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-3xl flex items-center justify-center text-primary mb-5 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm border border-primary/10">
-                {getCategoryIcon(product.category, product.name, 44)}
+                {getProductIcon(product.category, product.name, 44)}
               </div>
               <h4 className="text-[15px] font-bold text-navy line-clamp-1">{product.name}</h4>
               <span className="text-[11px] text-gray mb-1 uppercase tracking-wider font-bold">{product.brand}</span>

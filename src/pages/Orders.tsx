@@ -13,28 +13,15 @@ import { formatNaira, getErrorMessage } from '../lib/utils'
 import {
   Plus, Search, X, Trash2, CheckCircle2, Printer,
   ArrowLeft, ArrowRight, Eye, Edit, Receipt,
-  Smartphone, Laptop, Tablet, Headphones, Gamepad2,
-  Watch, Speaker, MousePointer2, RotateCcw, Calendar
+  RotateCcw, Calendar
 } from 'lucide-react'
+import { getProductIcon } from '../lib/productIcon'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Order, Product, ProductVariant, CartItem, Customer, VariantUnit, Batch } from '../types'
 import { useBatches } from '../hooks/useBatches'
 import { toast } from 'sonner'
 
-const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
-  const props = { size, className: 'shrink-0' }
-  if (category === 'Phones') return <Smartphone {...props} />
-  if (category === 'Laptops') return <Laptop {...props} />
-  if (category === 'Tablets') return <Tablet {...props} />
-  const lowName = name.toLowerCase()
-  if (lowName.includes('watch')) return <Watch {...props} />
-  if (lowName.includes('ear') || lowName.includes('airpod') || lowName.includes('headphone')) return <Headphones {...props} />
-  if (lowName.includes('game') || lowName.includes('play')) return <Gamepad2 {...props} />
-  if (lowName.includes('speak')) return <Speaker {...props} />
-  if (lowName.includes('mouse')) return <MousePointer2 {...props} />
-  return <Headphones {...props} />
-}
 
 export const Orders: React.FC = () => {
   const { orders, isLoading, addOrder, updateOrder, returnOrder } = useOrders()
@@ -676,7 +663,7 @@ export const Orders: React.FC = () => {
                           return (
                             <button key={p.id} disabled={isOut} onClick={() => addToCart(p)} className={cn('w-full py-4 flex items-center justify-between group transition-all border-b border-gray-50 last:border-0', isOut ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50/50 px-2 -mx-2 rounded-lg')}>
                               <div className="flex items-center gap-4 text-left">
-                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray/60 group-hover:bg-primary/10 group-hover:text-primary transition-colors">{getCategoryIcon(p.category, p.name, 20)}</div>
+                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray/60 group-hover:bg-primary/10 group-hover:text-primary transition-colors">{getProductIcon(p.category, p.name, 20)}</div>
                                 <div>
                                   <span className="text-[14px] font-bold text-navy block leading-tight">{p.name}</span>
                                   <span className="text-[11px] text-gray">{p.brand} • {p.variants?.length || 0} configurations</span>

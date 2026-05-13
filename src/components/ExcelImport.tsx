@@ -23,6 +23,7 @@ const parseCategory = (s: string): Product['category'] => {
   return 'Accessories'
 }
 
+
 const parseCondition = (s: string): 'New' | 'Open Box' | 'Pre-owned' => {
   const l = s?.toLowerCase() || ''
   if (l.includes('open')) return 'Open Box'
@@ -34,7 +35,6 @@ const parseDate = (val: unknown): string => {
   const today = new Date().toISOString().split('T')[0]
   if (val instanceof Date && !isNaN(val.getTime())) return val.toISOString().split('T')[0]
   if (typeof val === 'number' && val > 1000) {
-    // Excel serial date
     const d = new Date((val - 25569) * 86400 * 1000)
     return isNaN(d.getTime()) ? today : d.toISOString().split('T')[0]
   }
@@ -61,6 +61,7 @@ interface ParsedRow {
   dateReceived: string
   notes?: string
   variantKey: string
+  imeis: string[]
 }
 
 interface ProductGroup {
@@ -94,6 +95,7 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
   const [done, setDone] = useState(false)
   const [editingRow, setEditingRow] = useState<{ gi: number; ri: number } | null>(null)
   const [editRowData, setEditRowData] = useState<{ quantity?: number; costPrice?: number; sellPrice?: number }>({})
+  const [importedImeis, setImportedImeis] = useState(0)
 
   const deletePreviewRow = (gi: number, ri: number) => {
     setPreview(prev =>
@@ -123,12 +125,12 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Product Name', 'Brand', 'Category', 'Color', 'Storage', 'RAM', 'Condition', 'Qty', 'Cost Price', 'Sell Price', 'Supplier', 'Date Received', 'Notes'],
-      ['iPhone 15', 'Apple', 'Phones', 'Black', '128GB', '', 'New', 10, 250000, 350000, 'Alaba Market', '2024-05-01', ''],
-      ['iPhone 15', 'Apple', 'Phones', 'Blue', '128GB', '', 'New', 5, 250000, 350000, 'Alaba Market', '2024-05-01', ''],
-      ['iPhone 15', 'Apple', 'Phones', 'Black', '256GB', '', 'New', 8, 310000, 420000, 'Alaba Market', '2024-05-01', ''],
-      ['MacBook Air M2', 'Apple', 'Laptops', '', '', '8GB', 'New', 3, 1200000, 1500000, 'Computer Village', '2024-05-01', ''],
-      ['USB-C Cable', 'Anker', 'Accessories', '', '', '', 'New', 50, 2000, 3500, 'Alaba Market', '2024-05-01', 'Braided'],
+      ['Product Name', 'Brand', 'Category', 'Color', 'Storage', 'RAM', 'Condition', 'Qty', 'Cost Price', 'Sell Price', 'Supplier', 'Date Received', 'Notes', 'IMEI (comma-separated)'],
+      ['iPhone 15', 'Apple', 'Phones', 'Black', '128GB', '', 'New', 2, 250000, 350000, 'Alaba Market', '2024-05-01', '', '351756012345678,351756012345679'],
+      ['iPhone 15', 'Apple', 'Phones', 'Blue', '128GB', '', 'New', 1, 250000, 350000, 'Alaba Market', '2024-05-01', '', '351756012345680'],
+      ['iPhone 15', 'Apple', 'Phones', 'Black', '256GB', '', 'New', 2, 310000, 420000, 'Alaba Market', '2024-05-01', '', '351756012345681,351756012345682'],
+      ['MacBook Air M2', 'Apple', 'Laptops', '', '', '8GB', 'New', 3, 1200000, 1500000, 'Computer Village', '2024-05-01', '', ''],
+      ['USB-C Cable', 'Anker', 'Accessories', '', '', '', 'New', 50, 2000, 3500, 'Alaba Market', '2024-05-01', 'Braided', ''],
     ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Batch Import')
@@ -189,6 +191,21 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
           const ram = col(row, 'ram') || undefined
           const condition = parseCondition(col(row, 'condition'))
 
+          // Flexible IMEI column: matches any header containing 'imei' or 'serial'
+          const imeiColIdx = headers.findIndex(h => h.includes('imei') || h.includes('serial'))
+          const rawImei = imeiColIdx >= 0 && row[imeiColIdx] !== '' ? String(row[imeiColIdx] || '').trim() : ''
+          const imeis = rawImei
+            ? rawImei.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean)
+            : []
+
+          const notes = col(row, 'notes', 'note') || undefined
+
+          // Fallback: if no dedicated IMEI column, extract 15-digit IMEI numbers from notes
+          if (imeis.length === 0 && notes) {
+            const fromNotes = notes.match(/\b\d{14,16}\b/g) || []
+            imeis.push(...fromNotes)
+          }
+
           parsed.push({
             productName,
             brand: col(row, 'brand'),
@@ -202,8 +219,9 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
             sellPrice: Number(col(row, 'sell price', 'sell price', 'price', 'sell')) || undefined,
             supplier: col(row, 'supplier') || undefined,
             dateReceived: parseDate(colRaw(row, 'date received', 'date')),
-            notes: col(row, 'notes', 'note') || undefined,
+            notes,
             variantKey: [color, storage, ram, condition].filter(Boolean).join('|').toLowerCase(),
+            imeis,
           })
         }
 
@@ -276,8 +294,10 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
     if (!preview) return
     setImporting(true)
     setImportProgress(0)
+    setImportedImeis(0)
 
     const deliveryId = crypto.randomUUID()
+    let totalImeiCount = 0
 
     try {
       for (let gi = 0; gi < preview.length; gi++) {
@@ -286,7 +306,6 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
         let finalVariants: ProductVariant[] = []
 
         if (group.isNew) {
-          // Build variant list upfront for new product
           if (group.isVariantProduct) {
             const seen = new Set<string>()
             for (const row of group.rows) {
@@ -326,7 +345,6 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
           productId = group.existingProduct!.id
           finalVariants = [...(group.existingProduct!.variants || [])]
 
-          // Merge in any new variants
           if (group.isVariantProduct && group.newVariantKeys.length > 0) {
             const seen = new Set(finalVariants.map(v => makeVariantKey(v)))
             for (const row of group.rows) {
@@ -352,7 +370,7 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
         const variantIdMap = new Map<string, string>()
         for (const v of finalVariants) variantIdMap.set(makeVariantKey(v), v.id)
 
-        // Batch inserts all at once
+        // Batch inserts
         const batchInserts = group.rows
           .filter(r => r.quantity > 0)
           .map(r => ({
@@ -373,31 +391,54 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
           if (error) throw new Error(`"${group.productName}" batch insert: ${error.message}`)
         }
 
-        // One stock update per product (not per row)
+        // Stock + units update — work from finalVariants in memory (no re-fetch)
         if (group.isVariantProduct) {
           const stockAdds = new Map<string, number>()
+          const unitsToAdd = new Map<string, { imei: string; supplier?: string }[]>()
+
           for (const r of group.rows.filter(r => r.quantity > 0)) {
             const vid = variantIdMap.get(r.variantKey)
-            if (vid) stockAdds.set(vid, (stockAdds.get(vid) || 0) + r.quantity)
+            if (!vid) continue
+            stockAdds.set(vid, (stockAdds.get(vid) || 0) + r.quantity)
+            if (r.imeis.length > 0) {
+              unitsToAdd.set(vid, [
+                ...(unitsToAdd.get(vid) || []),
+                ...r.imeis.map(imei => ({ imei, supplier: r.supplier || undefined })),
+              ])
+            }
           }
-          const { data: prod } = await supabase.from('products').select('variants').eq('id', productId).single()
-          if (prod?.variants) {
-            const updated = (prod.variants as Record<string, unknown>[]).map(v =>
-              stockAdds.has(v.id as string)
-                ? { ...v, stock: (v.stock as number) + stockAdds.get(v.id as string)! }
-                : v
-            )
-            const total = updated.reduce((s, v) => s + (v.stock as number), 0)
-            await supabase.from('products').update({ variants: updated, stock: total, stock_updated_at: new Date().toISOString() }).eq('id', productId)
-          }
+
+          const updatedVariants = finalVariants.map(v => {
+            const stockAdd = stockAdds.get(v.id) || 0
+            const newUnits = unitsToAdd.get(v.id) || []
+            if (stockAdd === 0 && newUnits.length === 0) return v
+            return {
+              ...v,
+              stock: (v.stock || 0) + stockAdd,
+              units: [...(v.units || []), ...newUnits],
+            }
+          })
+
+          const imeiCountForProduct = updatedVariants.reduce((s, v) => s + (v.units?.filter(u => u.imei).length || 0), 0)
+          totalImeiCount += imeiCountForProduct
+
+
+          const total = updatedVariants.reduce((s, v) => s + v.stock, 0)
+          const { error: stockErr } = await supabase.from('products').update({
+            variants: updatedVariants,
+            stock: total,
+            stock_updated_at: new Date().toISOString(),
+          }).eq('id', productId)
+          if (stockErr) throw new Error(`"${group.productName}" stock update: ${stockErr.message}`)
         } else {
           const totalQty = group.rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0)
           const { data: prod } = await supabase.from('products').select('stock').eq('id', productId).single()
           if (prod) {
-            await supabase.from('products').update({
+            const { error: stockErr } = await supabase.from('products').update({
               stock: (prod as Record<string, unknown>).stock as number + totalQty,
               stock_updated_at: new Date().toISOString(),
             }).eq('id', productId)
+            if (stockErr) throw new Error(`"${group.productName}" stock update: ${stockErr.message}`)
           }
         }
 
@@ -407,6 +448,7 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['batches'] })
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setImportedImeis(totalImeiCount)
       setDone(true)
 
     } catch (err) {
@@ -422,6 +464,93 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
   const totalUnits = preview?.reduce((s, g) => s + g.rows.reduce((rs, r) => rs + r.quantity, 0), 0) ?? 0
   const newProducts = preview?.filter(g => g.isNew).length ?? 0
   const updatedProducts = preview?.filter(g => !g.isNew).length ?? 0
+
+  // ── row renderer (used in preview) ───────────────────────────────────────
+
+  const renderPreviewRow = (group: ProductGroup, gi: number, row: ParsedRow, ri: number, tiered: boolean) => {
+    const isNewVariant = group.newVariantKeys.includes(row.variantKey)
+    const isEditing = editingRow?.gi === gi && editingRow?.ri === ri
+
+    // In tiered mode, storage/RAM is shown in the section header — omit from label
+    const variantLabel = [
+      row.color,
+      !tiered && row.storage,
+      !tiered && row.ram,
+      row.condition !== 'New' ? row.condition : '',
+    ].filter(Boolean).join(' · ') || (group.isVariantProduct ? 'Default' : 'Simple')
+
+    return (
+      <div key={ri} className={cn(
+        'grid grid-cols-[1fr_52px_82px_82px_52px] gap-2 px-4 py-2 items-center text-[12px]',
+        isNewVariant ? 'bg-emerald-50/40' : 'bg-white'
+      )}>
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <span className="font-semibold text-navy truncate">{variantLabel}</span>
+          {isNewVariant && (
+            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase shrink-0">New</span>
+          )}
+          {row.imeis.length > 0 && (
+            <span className="text-[9px] font-semibold text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full shrink-0">
+              {row.imeis.length} IMEI{row.imeis.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {isEditing ? (
+          <>
+            <input
+              type="number" min={1} autoFocus
+              defaultValue={row.quantity}
+              onChange={e => setEditRowData(d => ({ ...d, quantity: Number(e.target.value) || 1 }))}
+              className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-center outline-none"
+            />
+            <input
+              type="number" min={0}
+              defaultValue={row.costPrice}
+              onChange={e => setEditRowData(d => ({ ...d, costPrice: Number(e.target.value) }))}
+              className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-orange-600 outline-none"
+            />
+            <input
+              type="number" min={0}
+              defaultValue={row.sellPrice ?? ''}
+              onChange={e => setEditRowData(d => ({ ...d, sellPrice: Number(e.target.value) || undefined }))}
+              className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-primary outline-none"
+            />
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => saveEditRow(gi, ri)} className="w-6 h-6 flex items-center justify-center rounded text-emerald-600 hover:bg-emerald-50 transition-colors">
+                <Check size={12} />
+              </button>
+              <button onClick={() => setEditingRow(null)} className="w-6 h-6 flex items-center justify-center rounded text-gray hover:bg-gray-100 transition-colors">
+                <X size={12} />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="font-bold text-navy">{row.quantity}</span>
+            <span className="font-bold text-orange-600">{row.costPrice > 0 ? formatNaira(row.costPrice) : '—'}</span>
+            <span className="font-bold text-primary">{row.sellPrice ? formatNaira(row.sellPrice) : '—'}</span>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => { setEditingRow({ gi, ri }); setEditRowData({}) }}
+                className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                title="Edit row"
+              >
+                <Pencil size={11} />
+              </button>
+              <button
+                onClick={() => deletePreviewRow(gi, ri)}
+                className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-red-500 hover:bg-red-50 transition-colors"
+                title="Remove row"
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
 
   // ── render ───────────────────────────────────────────────────────────────
 
@@ -457,8 +586,13 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                 {newProducts > 0 && updatedProducts > 0 && ' · '}
                 {updatedProducts > 0 && `${updatedProducts} existing product${updatedProducts !== 1 ? 's' : ''} updated`}
                 {' · '}
-                {totalBatchRows} batch record{totalBatchRows !== 1 ? 's' : ''} · {totalUnits} units added to stock
+                {totalBatchRows} batch record{totalBatchRows !== 1 ? 's' : ''} · {totalUnits} units
               </p>
+              {importedImeis > 0 ? (
+                <p className="text-[12px] text-violet-600 font-bold mt-1">{importedImeis} IMEI{importedImeis !== 1 ? 's' : ''} recorded in inventory</p>
+              ) : (
+                <p className="text-[11px] text-gray/50 mt-1">No IMEIs found — fill the "IMEI (comma-separated)" column to track them</p>
+              )}
             </div>
             <button onClick={onClose} className="mt-2 h-11 px-8 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors">
               Done
@@ -512,107 +646,63 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                 </div>
               )}
 
-              {preview.map((group, gi) => (
-                <div key={group.productName} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
-                  {/* Product header */}
-                  <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-white">
-                    <Package size={15} className="text-gray/40 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[13px] font-bold text-navy">{group.productName}</span>
-                      <span className="text-[11px] text-gray/50 ml-2">{group.brand} · {group.category}</span>
+              {preview.map((group, gi) => {
+                // Determine tier dimension (storage > ram > none)
+                const dim = group.isVariantProduct && group.rows.some(r => r.storage)
+                  ? 'storage'
+                  : group.isVariantProduct && group.rows.some(r => r.ram)
+                    ? 'ram'
+                    : null
+                const getDimVal = (r: ParsedRow) => dim === 'storage' ? r.storage : dim === 'ram' ? r.ram : undefined
+                const tiers = dim ? [...new Set(group.rows.map(getDimVal).filter(Boolean))] as string[] : null
+
+                return (
+                  <div key={group.productName} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
+                    {/* Product header */}
+                    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-white">
+                      <Package size={15} className="text-gray/40 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[13px] font-bold text-navy">{group.productName}</span>
+                        <span className="text-[11px] text-gray/50 ml-2">{group.brand} · {group.category}</span>
+                      </div>
+                      {group.isNew ? (
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">New product</span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Exists — updating</span>
+                      )}
                     </div>
-                    {group.isNew ? (
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">New product</span>
-                    ) : (
-                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Exists — updating</span>
-                    )}
-                  </div>
 
-                  {/* Rows */}
-                  <div className="divide-y divide-gray-100">
-                    {/* Column headers */}
-                    <div className="grid grid-cols-[1fr_60px_90px_90px_52px] gap-2 px-4 py-1.5 bg-gray-100/60 text-[9px] font-bold text-gray/50 uppercase tracking-widest">
-                      <span>{group.isVariantProduct ? 'Variant' : 'Product'}</span>
-                      <span>Qty</span>
-                      <span>Cost</span>
-                      <span>Sell</span>
-                      <span />
+                    {/* Rows */}
+                    <div className="divide-y divide-gray-100">
+                      {/* Column headers */}
+                      <div className="grid grid-cols-[1fr_52px_82px_82px_52px] gap-2 px-4 py-1.5 bg-gray-100/60 text-[9px] font-bold text-gray/50 uppercase tracking-widest">
+                        <span>{group.isVariantProduct ? 'Variant' : 'Product'}</span>
+                        <span>Qty</span>
+                        <span>Cost</span>
+                        <span>Sell</span>
+                        <span />
+                      </div>
+
+                      {tiers
+                        ? tiers.map(tier => {
+                            const tierRows = group.rows.filter(r => getDimVal(r) === tier)
+                            return (
+                              <React.Fragment key={tier}>
+                                {/* Storage / RAM tier header */}
+                                <div className="px-4 py-1 bg-gray-100/80 text-[10px] font-bold text-gray/60 uppercase tracking-widest flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-gray/20 inline-block" />
+                                  {tier}
+                                </div>
+                                {tierRows.map(row => renderPreviewRow(group, gi, row, group.rows.indexOf(row), true))}
+                              </React.Fragment>
+                            )
+                          })
+                        : group.rows.map((row, ri) => renderPreviewRow(group, gi, row, ri, false))
+                      }
                     </div>
-
-                    {group.rows.map((row, ri) => {
-                      const variantLabel = [row.color, row.storage, row.ram, row.condition !== 'New' ? row.condition : ''].filter(Boolean).join(' · ') || 'Simple'
-                      const isNewVariant = group.newVariantKeys.includes(row.variantKey)
-                      const isEditing = editingRow?.gi === gi && editingRow?.ri === ri
-                      return (
-                        <div key={ri} className={cn(
-                          'grid grid-cols-[1fr_60px_90px_90px_52px] gap-2 px-4 py-2 items-center text-[12px]',
-                          isNewVariant ? 'bg-emerald-50/40' : 'bg-white'
-                        )}>
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-semibold text-navy truncate">{variantLabel}</span>
-                            {isNewVariant && (
-                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase shrink-0">New</span>
-                            )}
-                          </div>
-
-                          {isEditing ? (
-                            <>
-                              <input
-                                type="number" min={1} autoFocus
-                                defaultValue={row.quantity}
-                                onChange={e => setEditRowData(d => ({ ...d, quantity: Number(e.target.value) || 1 }))}
-                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-center outline-none"
-                              />
-                              <input
-                                type="number" min={0}
-                                defaultValue={row.costPrice}
-                                onChange={e => setEditRowData(d => ({ ...d, costPrice: Number(e.target.value) }))}
-                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-orange-600 outline-none"
-                              />
-                              <input
-                                type="number" min={0}
-                                defaultValue={row.sellPrice ?? ''}
-                                onChange={e => setEditRowData(d => ({ ...d, sellPrice: Number(e.target.value) || undefined }))}
-                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-primary outline-none"
-                              />
-                              <div className="flex items-center gap-0.5">
-                                <button onClick={() => saveEditRow(gi, ri)} className="w-6 h-6 flex items-center justify-center rounded text-emerald-600 hover:bg-emerald-50 transition-colors">
-                                  <Check size={12} />
-                                </button>
-                                <button onClick={() => setEditingRow(null)} className="w-6 h-6 flex items-center justify-center rounded text-gray hover:bg-gray-100 transition-colors">
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-bold text-navy">{row.quantity}</span>
-                              <span className="font-bold text-orange-600">{row.costPrice > 0 ? formatNaira(row.costPrice) : '—'}</span>
-                              <span className="font-bold text-primary">{row.sellPrice ? formatNaira(row.sellPrice) : '—'}</span>
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  onClick={() => { setEditingRow({ gi, ri }); setEditRowData({}) }}
-                                  className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
-                                  title="Edit row"
-                                >
-                                  <Pencil size={11} />
-                                </button>
-                                <button
-                                  onClick={() => deletePreviewRow(gi, ri)}
-                                  className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                  title="Remove row"
-                                >
-                                  <Trash2 size={11} />
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )
-                    })}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Footer */}
@@ -668,6 +758,7 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                     ['Sell Price', 'Selling price per unit'],
                     ['Supplier', 'Supplier name'],
                     ['Date Received', 'YYYY-MM-DD or DD/MM/YYYY'],
+                    ['IMEI (comma-separated)', 'Optional. One IMEI per unit, comma-separated'],
                   ].map(([col, desc]) => (
                     <div key={col} className="flex gap-2">
                       <span className="font-bold text-navy shrink-0">{col}</span>

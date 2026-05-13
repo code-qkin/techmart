@@ -8,6 +8,7 @@ import { getStockStatus, formatNaira } from '../lib/utils'
 import { Plus, Trash2, Truck, Search, ChevronDown, ChevronRight, Package, Tag, User, Phone, Mail, MapPin, FileText, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '../lib/utils'
+import { getProductIcon } from '../lib/productIcon'
 import type { Supplier } from '../types'
 
 const StatusPill = ({ status }: { status: 'in' | 'low' | 'out' }) => {
@@ -312,7 +313,9 @@ export const Suppliers: React.FC = () => {
                         return (
                           <div key={p.id} className="bg-white border border-border rounded-xl overflow-hidden">
                             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-                              <span className="text-2xl">{p.emoji}</span>
+                              <div className="w-9 h-9 bg-primary/5 rounded-lg flex items-center justify-center text-primary shrink-0 border border-primary/10">
+                                {getProductIcon(p.category, p.name, 18)}
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-[14px] font-bold text-navy">{p.name}</p>
                                 <p className="text-[11px] text-gray/60">{p.brand} · {p.category}</p>

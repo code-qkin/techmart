@@ -7,6 +7,7 @@ import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
 import { formatNaira } from '../lib/utils'
 import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet } from 'lucide-react'
+import { getProductIcon } from '../lib/productIcon'
 import { cn } from '../lib/utils'
 import type { Batch, Product } from '../types'
 import { toast } from 'sonner'
@@ -355,9 +356,6 @@ export const Batches: React.FC = () => {
     return `${product.name} — ${variantLabel}`
   }
 
-  const getProductEmoji = (productId: string) => {
-    return products.find(p => p.id === productId)?.emoji || '📦'
-  }
 
   const supplierOptions = useMemo(() => {
     const all = batches.map(b => b.supplier).filter(Boolean) as string[]
@@ -624,7 +622,9 @@ export const Batches: React.FC = () => {
                             <tr key={b.id} className={cn('text-[13px] hover:bg-gray-50/60 transition-colors group', isDepleted && 'opacity-40')}>
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-base">{getProductEmoji(b.productId)}</span>
+                                  <div className="w-7 h-7 bg-primary/5 rounded-md flex items-center justify-center text-primary shrink-0 border border-primary/10">
+                                    {(() => { const p = products.find(x => x.id === b.productId); return getProductIcon(p?.category || 'Accessories', p?.name || '', 14) })()}
+                                  </div>
                                   <span className="font-semibold text-navy">{getProductName(b.productId, b.variantId)}</span>
                                 </div>
                               </td>
@@ -815,7 +815,9 @@ export const Batches: React.FC = () => {
                       <div key={productId} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
                         {/* Product header */}
                         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 bg-white">
-                          <span className="text-base">{prod?.emoji || '📦'}</span>
+                          <div className="w-7 h-7 bg-primary/5 rounded-md flex items-center justify-center text-primary shrink-0 border border-primary/10">
+                            {getProductIcon(prod?.category || 'Accessories', prod?.name || '', 14)}
+                          </div>
                           <span className="text-[13px] font-bold text-navy">{prod?.name || productId}</span>
                         </div>
 
@@ -1113,7 +1115,7 @@ export const Batches: React.FC = () => {
                         >
                           <option value="">Select product…</option>
                           {products.map(p => (
-                            <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
+                            <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
                         {lineItems.length > 1 && (

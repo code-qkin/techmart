@@ -11,20 +11,13 @@ import {
   AlertCircle,
   Package,
   XCircle,
-  Smartphone,
-  Laptop,
-  Tablet,
-  Headphones,
-  Gamepad2,
-  Watch,
-  Speaker,
-  MousePointer2,
   ChevronDown,
   ChevronRight,
   Banknote,
   Eye,
   EyeOff
 } from 'lucide-react'
+import { getProductIcon } from '../lib/productIcon'
 import { useNavigate } from 'react-router-dom'
 import { useProducts } from '../hooks/useProducts'
 import { cn } from '../lib/utils'
@@ -32,21 +25,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant, VariantUnit } from '../types'
 import { toast } from 'sonner'
 
-const getCategoryIcon = (category: string, name: string = '', size: number = 24) => {
-  const props = { size, className: "shrink-0" }
-  if (category === 'Phones') return <Smartphone {...props} />
-  if (category === 'Laptops') return <Laptop {...props} />
-  if (category === 'Tablets') return <Tablet {...props} />
-
-  const lowName = name.toLowerCase()
-  if (lowName.includes('watch')) return <Watch {...props} />
-  if (lowName.includes('ear') || lowName.includes('airpod') || lowName.includes('headphone')) return <Headphones {...props} />
-  if (lowName.includes('game') || lowName.includes('play')) return <Gamepad2 {...props} />
-  if (lowName.includes('speak')) return <Speaker {...props} />
-  if (lowName.includes('mouse')) return <MousePointer2 {...props} />
-
-  return <Headphones {...props} />
-}
 
 export const Inventory: React.FC = () => {
   const navigate = useNavigate()
@@ -171,7 +149,7 @@ export const Inventory: React.FC = () => {
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary/5 rounded-lg flex items-center justify-center text-primary shrink-0 border border-primary/10">
-            {getCategoryIcon(row.original.category, row.original.name, 18)}
+            {getProductIcon(row.original.category, row.original.name, 18)}
           </div>
           <div className="flex flex-col text-left">
             <span className="font-bold text-navy">{row.original.name}</span>
@@ -289,7 +267,7 @@ export const Inventory: React.FC = () => {
                 const pct = totalStockValue > 0 ? Math.round((val / totalStockValue) * 100) : 0
                 return (
                   <div key={cat} className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2">
-                    <div className="text-primary shrink-0">{getCategoryIcon(cat, '', 14)}</div>
+                    <div className="text-primary shrink-0">{getProductIcon(cat, '', 14)}</div>
                     <span className="text-[12px] font-bold text-navy">{cat}</span>
                     <span className="text-[12px] font-bold text-primary">{maskAmount(formatNaira(val), isHidden)}</span>
                     <span className="text-[11px] text-gray">{pct}%</span>
