@@ -41,19 +41,14 @@ export const Batches: React.FC = () => {
   interface VariantLine { variantId: string; label: string; quantity: string; costPrice: string; sellPrice: string }
   interface LineItem { key: number; productId: string; quantity: string; costPrice: string; sellPrice: string; variantLines: VariantLine[] }
 
-  const makeVariantLines = (p: Product, allBatches: Batch[]): VariantLine[] =>
-    (p.variants || []).map(v => {
-      const last = allBatches
-        .filter(b => b.productId === p.id && b.variantId === v.id)
-        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0]
-      return {
-        variantId: v.id,
-        label: v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' · '),
-        quantity: '',
-        costPrice: last ? String(last.costPrice) : (v.costPrice ? String(v.costPrice) : (p.costPrice ? String(p.costPrice) : '')),
-        sellPrice: last?.sellPrice ? String(last.sellPrice) : (v.price ? String(v.price) : (p.price ? String(p.price) : '')),
-      }
-    })
+  const makeVariantLines = (p: Product): VariantLine[] =>
+    (p.variants || []).map(v => ({
+      variantId: v.id,
+      label: v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' · '),
+      quantity: '',
+      costPrice: v.costPrice ? String(v.costPrice) : (p.costPrice ? String(p.costPrice) : ''),
+      sellPrice: v.price ? String(v.price) : (p.price ? String(p.price) : ''),
+    }))
 
   const blankLine = (key: number): LineItem => ({ key, productId: '', quantity: '1', costPrice: '', sellPrice: '', variantLines: [] })
 
@@ -81,22 +76,15 @@ export const Batches: React.FC = () => {
 
   const removeLine = (key: number) => setLineItems(prev => prev.filter(l => l.key !== key))
 
-  const selectProduct = useCallback((key: number, productId: string, allProducts: Product[], allBatches: Batch[]) => {
+  const selectProduct = useCallback((key: number, productId: string, allProducts: Product[]) => {
     const p = allProducts.find(x => x.id === productId)
     setLineItems(prev => prev.map(l => {
       if (l.key !== key) return l
       if (!p) return { ...l, productId: '', variantLines: [], costPrice: '', sellPrice: '' }
       if ((p.variants?.length || 0) > 0) {
-        return { ...l, productId, variantLines: makeVariantLines(p, allBatches), quantity: '', costPrice: '', sellPrice: '' }
+        return { ...l, productId, variantLines: makeVariantLines(p), quantity: '', costPrice: '', sellPrice: '' }
       }
-      const last = allBatches
-        .filter(b => b.productId === p.id && !b.variantId)
-        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0]
-      return {
-        ...l, productId, variantLines: [],
-        costPrice: last ? String(last.costPrice) : (p.costPrice ? String(p.costPrice) : ''),
-        sellPrice: last?.sellPrice ? String(last.sellPrice) : (p.price ? String(p.price) : ''),
-      }
+      return { ...l, productId, variantLines: [], costPrice: p.costPrice ? String(p.costPrice) : '', sellPrice: p.price ? String(p.price) : '' }
     }))
   }, [])
 
@@ -676,7 +664,7 @@ export const Batches: React.FC = () => {
                         <span className="text-[10px] font-bold text-gray/40 uppercase tracking-widest w-10 shrink-0">#{idx + 1}</span>
                         <select
                           value={line.productId}
-                          onChange={e => selectProduct(line.key, e.target.value, products, batches)}
+                          onChange={e => selectProduct(line.key, e.target.value, products)}
                           className="flex-1 h-9 px-3 bg-white border border-border rounded-lg text-[13px] focus:border-primary outline-none"
                         >
                           <option value="">Select product…</option>
@@ -691,48 +679,97 @@ export const Batches: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Variant product: one row per variant */}
-                      {isVariantProduct && (
-                        <div className="divide-y divide-gray-100">
-                          <div className="grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-1.5 bg-gray-100/60">
-                            <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Variant</span>
-                            <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Qty</span>
-                            <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Cost ₦</span>
-                            <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Sell ₦</span>
-                          </div>
-                          {line.variantLines.map(vl => (
-                            <div key={vl.variantId} className={cn('grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center', Number(vl.quantity) > 0 ? 'bg-white' : '')}>
-                              <span className="text-[12px] font-semibold text-navy truncate">{vl.label}</span>
-                              <input
-                                type="number" min={0} value={vl.quantity}
-                                onChange={e => updateVariantLine(line.key, vl.variantId, 'quantity', e.target.value)}
-                                placeholder="0"
-                                className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-center focus:border-primary outline-none bg-gray-50"
-                              />
-                              <input
-                                type="number" min={0} value={vl.costPrice}
-                                onChange={e => updateVariantLine(line.key, vl.variantId, 'costPrice', e.target.value)}
-                                placeholder="Cost"
-                                className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-gray-50"
-                              />
-                              <input
-                                type="number" min={0} value={vl.sellPrice}
-                                onChange={e => updateVariantLine(line.key, vl.variantId, 'sellPrice', e.target.value)}
-                                placeholder="Sell"
-                                className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-gray-50"
-                              />
-                            </div>
-                          ))}
-                          <div className="px-3 py-1.5 bg-gray-50 flex items-center gap-3">
-                            <span className="text-[10px] text-gray/40 italic">Leave qty at 0 to skip a variant</span>
-                            {line.variantLines.some(vl => Number(vl.quantity) > 0) && (
-                              <span className="text-[10px] font-bold text-primary ml-auto">
-                                {line.variantLines.reduce((s, vl) => s + (Number(vl.quantity) || 0), 0)} units total
-                              </span>
+                      {/* Variant product */}
+                      {isVariantProduct && (() => {
+                        const prod = products.find(p => p.id === line.productId)
+                        const pvariants = prod?.variants || []
+                        const dim: 'storage' | 'ram' | null =
+                          pvariants.some(v => v.storage) ? 'storage' :
+                          pvariants.some(v => v.ram) ? 'ram' : null
+                        const getDimVal = (v: typeof pvariants[0]) =>
+                          dim === 'storage' ? v.storage : dim === 'ram' ? v.ram : undefined
+                        const groups = dim
+                          ? [...new Set(pvariants.map(getDimVal).filter(Boolean))] as string[]
+                          : []
+
+                        return (
+                          <div className="divide-y divide-gray-100">
+                            {/* Price group setters */}
+                            {groups.length > 0 && (
+                              <div className="px-3 py-3 bg-primary/5 space-y-2">
+                                <p className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                                  Set price by {dim}
+                                </p>
+                                <div className="grid grid-cols-[70px_1fr_1fr] gap-2 px-0.5">
+                                  <span className="text-[9px] font-bold text-gray/40 uppercase">{dim}</span>
+                                  <span className="text-[9px] font-bold text-gray/40 uppercase">Cost ₦</span>
+                                  <span className="text-[9px] font-bold text-gray/40 uppercase">Sell ₦</span>
+                                </div>
+                                {groups.map(group => {
+                                  const ids = pvariants.filter(v => getDimVal(v) === group).map(v => v.id)
+                                  return (
+                                    <div key={group} className="grid grid-cols-[70px_1fr_1fr] gap-2 items-center">
+                                      <span className="text-[13px] font-bold text-navy">{group}</span>
+                                      <input
+                                        type="number" min={0} placeholder="Cost"
+                                        className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-white"
+                                        onChange={e => { if (e.target.value) ids.forEach(id => updateVariantLine(line.key, id, 'costPrice', e.target.value)) }}
+                                      />
+                                      <input
+                                        type="number" min={0} placeholder="Sell"
+                                        className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-white"
+                                        onChange={e => { if (e.target.value) ids.forEach(id => updateVariantLine(line.key, id, 'sellPrice', e.target.value)) }}
+                                      />
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             )}
+
+                            {/* Column headers */}
+                            <div className="grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-1.5 bg-gray-100/60">
+                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Variant</span>
+                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Qty</span>
+                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Cost ₦</span>
+                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Sell ₦</span>
+                            </div>
+
+                            {/* Per-variant qty + override */}
+                            {line.variantLines.map(vl => (
+                              <div key={vl.variantId} className={cn('grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center', Number(vl.quantity) > 0 ? 'bg-white' : '')}>
+                                <span className="text-[12px] font-semibold text-navy truncate">{vl.label}</span>
+                                <input
+                                  type="number" min={0} value={vl.quantity}
+                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'quantity', e.target.value)}
+                                  placeholder="0"
+                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-center focus:border-primary outline-none bg-gray-50"
+                                />
+                                <input
+                                  type="number" min={0} value={vl.costPrice}
+                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'costPrice', e.target.value)}
+                                  placeholder="Cost"
+                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-gray-50"
+                                />
+                                <input
+                                  type="number" min={0} value={vl.sellPrice}
+                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'sellPrice', e.target.value)}
+                                  placeholder="Sell"
+                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-gray-50"
+                                />
+                              </div>
+                            ))}
+
+                            <div className="px-3 py-1.5 bg-gray-50 flex items-center gap-3">
+                              <span className="text-[10px] text-gray/40 italic">Leave qty at 0 to skip a variant</span>
+                              {line.variantLines.some(vl => Number(vl.quantity) > 0) && (
+                                <span className="text-[10px] font-bold text-primary ml-auto">
+                                  {line.variantLines.reduce((s, vl) => s + (Number(vl.quantity) || 0), 0)} units total
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )
+                      })()}
 
                       {/* Simple product */}
                       {!isVariantProduct && line.productId && (
