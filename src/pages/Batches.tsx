@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PageHeader } from '../components/shared/PageHeader'
+import { ExcelImport } from '../components/ExcelImport'
 import { useBatches } from '../hooks/useBatches'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
 import { formatNaira } from '../lib/utils'
-import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck } from 'lucide-react'
+import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet } from 'lucide-react'
 import { cn } from '../lib/utils'
 import type { Batch, Product } from '../types'
 import { toast } from 'sonner'
@@ -63,6 +64,7 @@ export const Batches: React.FC = () => {
 
   const blankLine = (key: number): LineItem => ({ key, productId: '', quantity: '1', costPrice: '', sellPrice: '', variantLines: [] })
 
+  const [isImportOpen, setIsImportOpen] = useState(false)
   const [isMultiOpen, setIsMultiOpen] = useState(false)
   const [multiSupplier, setMultiSupplier] = useState('')
   const [multiDate, setMultiDate] = useState(new Date().toISOString().split('T')[0])
@@ -359,12 +361,20 @@ export const Batches: React.FC = () => {
           title="Batch History"
           subtitle="Every stock delivery logged with cost, supplier and remaining units"
         />
-        <button
-          onClick={openMultiModal}
-          className="flex items-center gap-2 h-10 px-4 bg-primary text-white rounded-xl font-bold text-[13px] hover:bg-primary-dark transition-colors shadow-sm shadow-primary/20 shrink-0"
-        >
-          <Plus size={15} /> New Batch
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-2 h-10 px-4 bg-white border border-border text-navy rounded-xl font-bold text-[13px] hover:bg-gray-50 transition-colors"
+          >
+            <FileSpreadsheet size={15} /> Import Excel
+          </button>
+          <button
+            onClick={openMultiModal}
+            className="flex items-center gap-2 h-10 px-4 bg-primary text-white rounded-xl font-bold text-[13px] hover:bg-primary-dark transition-colors shadow-sm shadow-primary/20"
+          >
+            <Plus size={15} /> New Batch
+          </button>
+        </div>
       </div>
 
       {/* Pinned variant filter banner */}
@@ -854,6 +864,14 @@ export const Batches: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Excel Import Modal */}
+      {isImportOpen && (
+        <ExcelImport
+          products={products}
+          onClose={() => setIsImportOpen(false)}
+        />
       )}
 
       {/* Multi-product Batch Receive Modal */}
