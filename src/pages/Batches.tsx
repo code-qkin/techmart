@@ -6,8 +6,9 @@ import { useBatches } from '../hooks/useBatches'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
 import { formatNaira } from '../lib/utils'
-import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet } from 'lucide-react'
+import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet, Download } from 'lucide-react'
 import { getProductIcon } from '../lib/productIcon'
+import { downloadImportTemplate } from '../lib/importTemplate'
 import { cn } from '../lib/utils'
 import type { Batch, Product } from '../types'
 import { toast } from 'sonner'
@@ -423,6 +424,13 @@ export const Batches: React.FC = () => {
           subtitle="Every stock delivery logged with cost, supplier and remaining units"
         />
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={downloadImportTemplate}
+            className="flex items-center gap-2 h-10 px-4 bg-white border border-border text-navy rounded-xl font-bold text-[13px] hover:bg-gray-50 transition-colors"
+            title="Download Excel template"
+          >
+            <Download size={15} /> Template
+          </button>
           <button
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 h-10 px-4 bg-white border border-border text-navy rounded-xl font-bold text-[13px] hover:bg-gray-50 transition-colors"
