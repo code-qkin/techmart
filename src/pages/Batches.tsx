@@ -58,6 +58,10 @@ export const Batches: React.FC = () => {
   const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Delete whole delivery state
+  const [deletingDelivery, setDeletingDelivery] = useState<{ key: string; batches: Batch[] } | null>(null)
+  const [isDeletingDelivery, setIsDeletingDelivery] = useState(false)
+
   // Multi-product batch receive state
   interface VariantLine { variantId: string; label: string; quantity: string; costPrice: string; sellPrice: string }
   interface LineItem { key: number; productId: string; quantity: string; costPrice: string; sellPrice: string; variantLines: VariantLine[] }
@@ -324,6 +328,23 @@ export const Batches: React.FC = () => {
     }
   }
 
+  const handleConfirmDeleteDelivery = async () => {
+    if (!deletingDelivery) return
+    setIsDeletingDelivery(true)
+    try {
+      for (const b of deletingDelivery.batches) {
+        await deleteBatch(b)
+      }
+      toast.success(`Delivery deleted — ${deletingDelivery.batches.length} batch${deletingDelivery.batches.length !== 1 ? 'es' : ''} removed`)
+      setDeletingDelivery(null)
+      setExpandedDeliveries(prev => { const n = new Set(prev); n.delete(deletingDelivery.key); return n })
+    } catch {
+      toast.error('Failed to delete delivery')
+    } finally {
+      setIsDeletingDelivery(false)
+    }
+  }
+
   const getProductName = (productId: string, variantId?: string) => {
     const product = products.find(p => p.id === productId)
     if (!product) return productId
@@ -558,14 +579,24 @@ export const Batches: React.FC = () => {
                     <p className="text-[11px] text-gray/40">cost value</p>
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); openDeliveryEdit(key, groupBatches) }}
-                  className="shrink-0 mr-3 w-8 h-8 flex items-center justify-center rounded-lg text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
-                  title="Edit whole delivery"
-                >
-                  <Pencil size={14} />
-                </button>
+                <div className="shrink-0 mr-3 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); openDeliveryEdit(key, groupBatches) }}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                    title="Edit whole delivery"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setDeletingDelivery({ key, batches: groupBatches }) }}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-gray/40 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="Delete whole delivery"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
 
                 {/* Expanded: individual batch lines */}
                 {isExpanded && (
@@ -980,6 +1011,35 @@ export const Batches: React.FC = () => {
               <button onClick={() => setDeletingBatch(null)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={handleConfirmDelete} disabled={isDeleting} className="flex-1 h-11 bg-red-500 text-white rounded-xl font-bold text-[14px] hover:bg-red-600 transition-colors disabled:opacity-60">
                 {isDeleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Delivery Confirm Modal */}
+      {deletingDelivery && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setDeletingDelivery(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[400px] animate-in zoom-in-95 duration-200 p-6 space-y-4">
+            <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center mx-auto">
+              <Trash2 size={22} className="text-red-500" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-[16px] font-bold text-navy">Delete entire delivery?</h3>
+              <p className="text-[13px] text-gray mt-1">
+                {deletingDelivery.batches.length} item{deletingDelivery.batches.length !== 1 ? 's' : ''} will be removed
+              </p>
+              {deletingDelivery.batches.some(b => b.quantityRemaining > 0) && (
+                <p className="text-[12px] font-bold text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {deletingDelivery.batches.reduce((s, b) => s + b.quantityRemaining, 0)} unsold units will be deducted from stock
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingDelivery(null)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={handleConfirmDeleteDelivery} disabled={isDeletingDelivery} className="flex-1 h-11 bg-red-500 text-white rounded-xl font-bold text-[14px] hover:bg-red-600 transition-colors disabled:opacity-60">
+                {isDeletingDelivery ? 'Deleting…' : 'Delete Delivery'}
               </button>
             </div>
           </div>
