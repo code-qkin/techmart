@@ -34,6 +34,7 @@ export const Batches: React.FC = () => {
     sellPrice: string
     originalQtyReceived: number
     originalQtyRemaining: number
+    isNew?: boolean
   }
 
   const [editingDelivery, setEditingDelivery] = useState<{ key: string; batches: Batch[] } | null>(null)
@@ -165,7 +166,7 @@ export const Batches: React.FC = () => {
 
   const openDeliveryEdit = (key: string, groupBatches: Batch[]) => {
     const first = groupBatches[0]
-    const lines = groupBatches.map(b => {
+    const lines: EditLine[] = groupBatches.map(b => {
       const prod = products.find(p => p.id === b.productId)
       const variant = prod?.variants?.find(v => v.id === b.variantId)
       const variantLabel = variant
@@ -183,6 +184,30 @@ export const Batches: React.FC = () => {
         originalQtyRemaining: b.quantityRemaining,
       }
     })
+    // Append any variants added to the product after this delivery was created
+    const coveredVariantIds = new Set(lines.map(l => l.variantId).filter(Boolean))
+    const productIdsInDelivery = [...new Set(lines.map(l => l.productId))]
+    for (const productId of productIdsInDelivery) {
+      const prod = products.find(p => p.id === productId)
+      if (!prod?.variants?.length) continue
+      for (const v of prod.variants) {
+        if (!coveredVariantIds.has(v.id)) {
+          lines.push({
+            batchId: `new-${v.id}`,
+            productId,
+            variantId: v.id,
+            label: v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' · '),
+            quantity: '',
+            costPrice: v.costPrice ? String(v.costPrice) : (prod.costPrice ? String(prod.costPrice) : ''),
+            sellPrice: v.price ? String(v.price) : (prod.price ? String(prod.price) : ''),
+            originalQtyReceived: 0,
+            originalQtyRemaining: 0,
+            isNew: true,
+          })
+        }
+      }
+    }
+
     setEditDeliveryLines(lines)
     setEditDeliverySupplier(first.supplier || '')
     setEditDeliveryDate(new Date(first.receivedAt).toISOString().split('T')[0])
@@ -204,17 +229,33 @@ export const Batches: React.FC = () => {
     setIsSaving(true)
     try {
       for (const line of editDeliveryLines) {
-        const batch = editingDelivery.batches.find(b => b.id === line.batchId)
-        if (!batch) continue
-        await updateBatch({
-          batch,
-          supplier: editDeliverySupplier || undefined,
-          costPrice: Number(line.costPrice) || 0,
-          sellPrice: Number(line.sellPrice) || undefined,
-          notes: editDeliveryNotes || undefined,
-          receivedAt: new Date(editDeliveryDate).toISOString(),
-          newQuantityReceived: Number(line.quantity),
-        })
+        if (line.isNew) {
+          if (Number(line.quantity) > 0) {
+            await receiveBatch({
+              productId: line.productId,
+              variantId: line.variantId,
+              supplier: editDeliverySupplier || undefined,
+              quantity: Number(line.quantity),
+              costPrice: Number(line.costPrice) || 0,
+              sellPrice: Number(line.sellPrice) || undefined,
+              notes: editDeliveryNotes || undefined,
+              receivedAt: new Date(editDeliveryDate).toISOString(),
+              deliveryId: editingDelivery.batches[0].deliveryId ?? editingDelivery.key,
+            })
+          }
+        } else {
+          const batch = editingDelivery.batches.find(b => b.id === line.batchId)
+          if (!batch) continue
+          await updateBatch({
+            batch,
+            supplier: editDeliverySupplier || undefined,
+            costPrice: Number(line.costPrice) || 0,
+            sellPrice: Number(line.sellPrice) || undefined,
+            notes: editDeliveryNotes || undefined,
+            receivedAt: new Date(editDeliveryDate).toISOString(),
+            newQuantityReceived: Number(line.quantity),
+          })
+        }
       }
       toast.success('Delivery updated')
       setEditingDelivery(null)
@@ -672,11 +713,19 @@ export const Batches: React.FC = () => {
 
                               {lines.map(line => {
                                 const minQty = line.originalQtyReceived - line.originalQtyRemaining
-                                const qtyChanged = Number(line.quantity) !== line.originalQtyReceived
+                                const qtyChanged = !line.isNew && Number(line.quantity) !== line.originalQtyReceived
                                 return (
-                                  <div key={line.batchId} className={cn('grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center', Number(line.quantity) > 0 ? 'bg-white' : '')}>
+                                  <div key={line.batchId} className={cn(
+                                    'grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center',
+                                    line.isNew ? 'bg-emerald-50/60' : Number(line.quantity) > 0 ? 'bg-white' : ''
+                                  )}>
                                     <div>
-                                      <span className="text-[12px] font-semibold text-navy truncate block">{line.label}</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[12px] font-semibold text-navy truncate">{line.label}</span>
+                                        {line.isNew && (
+                                          <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">New</span>
+                                        )}
+                                      </div>
                                       {qtyChanged && (
                                         <span className="text-[10px] text-amber-600 font-medium">
                                           {Number(line.quantity) > line.originalQtyReceived ? '+' : ''}{Number(line.quantity) - line.originalQtyReceived} units
@@ -684,8 +733,9 @@ export const Batches: React.FC = () => {
                                       )}
                                     </div>
                                     <input
-                                      type="number" min={minQty} value={line.quantity}
+                                      type="number" min={line.isNew ? 0 : minQty} value={line.quantity}
                                       onChange={e => updateEditLine(line.batchId, 'quantity', e.target.value)}
+                                      placeholder="0"
                                       className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-center focus:border-primary outline-none bg-gray-50"
                                     />
                                     <input
