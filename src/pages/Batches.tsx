@@ -24,13 +24,23 @@ export const Batches: React.FC = () => {
   const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set())
 
   // Edit modal state
-  const [editingBatch, setEditingBatch] = useState<Batch | null>(null)
-  const [editSupplier, setEditSupplier] = useState('')
-  const [editCostPrice, setEditCostPrice] = useState('')
-  const [editSellPrice, setEditSellPrice] = useState('')
-  const [editQty, setEditQty] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editDate, setEditDate] = useState('')
+  interface EditLine {
+    batchId: string
+    productId: string
+    variantId?: string
+    label: string
+    quantity: string
+    costPrice: string
+    sellPrice: string
+    originalQtyReceived: number
+    originalQtyRemaining: number
+  }
+
+  const [editingDelivery, setEditingDelivery] = useState<{ key: string; batches: Batch[] } | null>(null)
+  const [editDeliverySupplier, setEditDeliverySupplier] = useState('')
+  const [editDeliveryDate, setEditDeliveryDate] = useState('')
+  const [editDeliveryNotes, setEditDeliveryNotes] = useState('')
+  const [editDeliveryLines, setEditDeliveryLines] = useState<EditLine[]>([])
   const [isSaving, setIsSaving] = useState(false)
 
   // Delete confirm state
@@ -153,34 +163,63 @@ export const Batches: React.FC = () => {
     }
   }
 
-  const openEdit = (b: Batch) => {
-    setEditingBatch(b)
-    setEditSupplier(b.supplier || '')
-    setEditCostPrice(String(b.costPrice))
-    setEditSellPrice(b.sellPrice ? String(b.sellPrice) : '')
-    setEditQty(String(b.quantityReceived))
-    setEditNotes(b.notes || '')
-    setEditDate(new Date(b.receivedAt).toISOString().split('T')[0])
+  const openDeliveryEdit = (key: string, groupBatches: Batch[]) => {
+    const first = groupBatches[0]
+    const lines = groupBatches.map(b => {
+      const prod = products.find(p => p.id === b.productId)
+      const variant = prod?.variants?.find(v => v.id === b.variantId)
+      const variantLabel = variant
+        ? (variant.label || [variant.color, variant.storage, variant.ram, variant.condition].filter(Boolean).join(' · '))
+        : undefined
+      return {
+        batchId: b.id,
+        productId: b.productId,
+        variantId: b.variantId,
+        label: variantLabel || (prod?.name || b.productId),
+        quantity: String(b.quantityReceived),
+        costPrice: String(b.costPrice),
+        sellPrice: b.sellPrice ? String(b.sellPrice) : '',
+        originalQtyReceived: b.quantityReceived,
+        originalQtyRemaining: b.quantityRemaining,
+      }
+    })
+    setEditDeliveryLines(lines)
+    setEditDeliverySupplier(first.supplier || '')
+    setEditDeliveryDate(new Date(first.receivedAt).toISOString().split('T')[0])
+    setEditDeliveryNotes(first.notes || '')
+    setEditingDelivery({ key, batches: groupBatches })
   }
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
+  const updateEditLine = (batchId: string, field: 'quantity' | 'costPrice' | 'sellPrice', value: string) => {
+    setEditDeliveryLines(prev => prev.map(l => l.batchId === batchId ? { ...l, [field]: value } : l))
+  }
+
+  const bulkUpdateEditLines = (batchIds: string[], field: 'costPrice' | 'sellPrice', value: string) => {
+    setEditDeliveryLines(prev => prev.map(l => batchIds.includes(l.batchId) ? { ...l, [field]: value } : l))
+  }
+
+  const handleSaveDeliveryEdit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingBatch) return
+    if (!editingDelivery) return
     setIsSaving(true)
     try {
-      await updateBatch({
-        batch: editingBatch,
-        supplier: editSupplier || undefined,
-        costPrice: Number(editCostPrice),
-        sellPrice: Number(editSellPrice) || undefined,
-        notes: editNotes || undefined,
-        receivedAt: new Date(editDate).toISOString(),
-        newQuantityReceived: Number(editQty),
-      })
-      toast.success('Batch updated')
-      setEditingBatch(null)
+      for (const line of editDeliveryLines) {
+        const batch = editingDelivery.batches.find(b => b.id === line.batchId)
+        if (!batch) continue
+        await updateBatch({
+          batch,
+          supplier: editDeliverySupplier || undefined,
+          costPrice: Number(line.costPrice) || 0,
+          sellPrice: Number(line.sellPrice) || undefined,
+          notes: editDeliveryNotes || undefined,
+          receivedAt: new Date(editDeliveryDate).toISOString(),
+          newQuantityReceived: Number(line.quantity),
+        })
+      }
+      toast.success('Delivery updated')
+      setEditingDelivery(null)
     } catch {
-      toast.error('Failed to update batch')
+      toast.error('Failed to update delivery')
     } finally {
       setIsSaving(false)
     }
@@ -481,9 +520,9 @@ export const Batches: React.FC = () => {
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
-                                    onClick={() => openEdit(b)}
+                                    onClick={() => openDeliveryEdit(key, groupBatches)}
                                     className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-primary hover:bg-primary/5 transition-colors"
-                                    title="Edit batch"
+                                    title="Edit delivery"
                                   >
                                     <Pencil size={13} />
                                   </button>
@@ -509,77 +548,234 @@ export const Batches: React.FC = () => {
         )}
       </div>
 
-      {/* Edit Batch Modal */}
-      {editingBatch && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setEditingBatch(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[460px] animate-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="h-1 w-full bg-primary" />
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-              <div className="flex items-start justify-between">
+      {/* Edit Delivery Modal */}
+      {editingDelivery && (() => {
+        const productGroups = Array.from(
+          editDeliveryLines.reduce((map, line) => {
+            if (!map.has(line.productId)) map.set(line.productId, [] as typeof editDeliveryLines)
+            map.get(line.productId)!.push(line)
+            return map
+          }, new Map<string, typeof editDeliveryLines>())
+        )
+        const totalUnitsEdit = editDeliveryLines.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setEditingDelivery(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[680px] max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+              <div className="h-1 w-full bg-primary shrink-0" />
+
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
                 <div>
-                  <h3 className="text-[17px] font-bold text-navy">Edit Batch</h3>
-                  <p className="text-[12px] text-gray mt-0.5">{getProductName(editingBatch.productId, editingBatch.variantId)}</p>
+                  <h3 className="text-[17px] font-bold text-navy">Edit Delivery</h3>
+                  <p className="text-[12px] text-gray mt-0.5">
+                    {editingDelivery.batches.length} item{editingDelivery.batches.length !== 1 ? 's' : ''} in this delivery
+                  </p>
                 </div>
-                <button type="button" onClick={() => setEditingBatch(null)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
+                <button onClick={() => setEditingDelivery(null)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Qty Received *</label>
-                  <input
-                    type="number"
-                    min={editingBatch.quantityReceived - editingBatch.quantityRemaining}
-                    required
-                    value={editQty}
-                    onChange={e => setEditQty(e.target.value)}
-                    className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none"
-                  />
-                  {Number(editQty) !== editingBatch.quantityReceived && (
-                    <p className="text-[11px] text-amber-600 font-medium">
-                      Stock will {Number(editQty) > editingBatch.quantityReceived ? 'increase' : 'decrease'} by {Math.abs(Number(editQty) - editingBatch.quantityReceived)} units
+              <form onSubmit={handleSaveDeliveryEdit} className="flex flex-col flex-1 overflow-hidden">
+                {/* Common delivery fields */}
+                <div className="px-6 py-4 border-b border-border shrink-0">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
+                      <select value={editDeliverySupplier} onChange={e => setEditDeliverySupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none">
+                        <option value="">No supplier</option>
+                        {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
+                      <input type="date" required value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                    </div>
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes <span className="text-gray/40 normal-case font-normal">(applies to whole delivery)</span></label>
+                      <input value={editDeliveryNotes} onChange={e => setEditDeliveryNotes(e.target.value)} placeholder="Optional notes…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Product groups — scrollable */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 no-scrollbar">
+                  <p className="text-[11px] font-bold text-gray uppercase tracking-wider mb-1">Items in this delivery</p>
+
+                  {productGroups.map(([productId, lines]) => {
+                    const prod = products.find(p => p.id === productId)
+                    const isVariant = lines.some(l => l.variantId)
+                    const pvariants = prod?.variants || []
+
+                    return (
+                      <div key={productId} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
+                        {/* Product header */}
+                        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 bg-white">
+                          <span className="text-base">{prod?.emoji || '📦'}</span>
+                          <span className="text-[13px] font-bold text-navy">{prod?.name || productId}</span>
+                        </div>
+
+                        {isVariant ? (() => {
+                          const dim: 'storage' | 'ram' | null =
+                            pvariants.some(v => v.storage) ? 'storage' :
+                            pvariants.some(v => v.ram) ? 'ram' : null
+                          const getDimVal = (v: typeof pvariants[0]) =>
+                            dim === 'storage' ? v.storage : dim === 'ram' ? v.ram : undefined
+                          const groups = dim
+                            ? [...new Set(pvariants.map(getDimVal).filter(Boolean))] as string[]
+                            : []
+
+                          return (
+                            <div className="divide-y divide-gray-100">
+                              {groups.length > 0 && (
+                                <div className="px-3 py-3 bg-primary/5 space-y-2">
+                                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Set price by {dim}</p>
+                                  <div className="grid grid-cols-[70px_1fr_1fr] gap-2 px-0.5">
+                                    <span className="text-[9px] font-bold text-gray/40 uppercase">{dim}</span>
+                                    <span className="text-[9px] font-bold text-gray/40 uppercase">Cost ₦</span>
+                                    <span className="text-[9px] font-bold text-gray/40 uppercase">Sell ₦</span>
+                                  </div>
+                                  {groups.map(group => {
+                                    const batchIds = lines
+                                      .filter(l => {
+                                        const v = pvariants.find(pv => pv.id === l.variantId)
+                                        return v && getDimVal(v) === group
+                                      })
+                                      .map(l => l.batchId)
+                                    return (
+                                      <div key={group} className="grid grid-cols-[70px_1fr_1fr] gap-2 items-center">
+                                        <span className="text-[13px] font-bold text-navy">{group}</span>
+                                        <input
+                                          type="number" min={0} placeholder="Cost"
+                                          className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-white"
+                                          onChange={e => { if (e.target.value) bulkUpdateEditLines(batchIds, 'costPrice', e.target.value) }}
+                                        />
+                                        <input
+                                          type="number" min={0} placeholder="Sell"
+                                          className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-white"
+                                          onChange={e => { if (e.target.value) bulkUpdateEditLines(batchIds, 'sellPrice', e.target.value) }}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-1.5 bg-gray-100/60">
+                                <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Variant</span>
+                                <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Qty</span>
+                                <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Cost ₦</span>
+                                <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Sell ₦</span>
+                              </div>
+
+                              {lines.map(line => {
+                                const minQty = line.originalQtyReceived - line.originalQtyRemaining
+                                const qtyChanged = Number(line.quantity) !== line.originalQtyReceived
+                                return (
+                                  <div key={line.batchId} className={cn('grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center', Number(line.quantity) > 0 ? 'bg-white' : '')}>
+                                    <div>
+                                      <span className="text-[12px] font-semibold text-navy truncate block">{line.label}</span>
+                                      {qtyChanged && (
+                                        <span className="text-[10px] text-amber-600 font-medium">
+                                          {Number(line.quantity) > line.originalQtyReceived ? '+' : ''}{Number(line.quantity) - line.originalQtyReceived} units
+                                        </span>
+                                      )}
+                                    </div>
+                                    <input
+                                      type="number" min={minQty} value={line.quantity}
+                                      onChange={e => updateEditLine(line.batchId, 'quantity', e.target.value)}
+                                      className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-center focus:border-primary outline-none bg-gray-50"
+                                    />
+                                    <input
+                                      type="number" min={0} value={line.costPrice}
+                                      onChange={e => updateEditLine(line.batchId, 'costPrice', e.target.value)}
+                                      placeholder="Cost"
+                                      className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-gray-50"
+                                    />
+                                    <input
+                                      type="number" min={0} value={line.sellPrice}
+                                      onChange={e => updateEditLine(line.batchId, 'sellPrice', e.target.value)}
+                                      placeholder="Sell"
+                                      className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-gray-50"
+                                    />
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })() : (
+                          lines.map(line => {
+                            const minQty = line.originalQtyReceived - line.originalQtyRemaining
+                            const qtyChanged = Number(line.quantity) !== line.originalQtyReceived
+                            return (
+                              <div key={line.batchId} className="p-3 space-y-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Qty</label>
+                                    <input type="number" min={minQty} value={line.quantity}
+                                      onChange={e => updateEditLine(line.batchId, 'quantity', e.target.value)}
+                                      className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold focus:border-primary outline-none" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Cost ₦</label>
+                                    <input type="number" min={0} value={line.costPrice}
+                                      onChange={e => updateEditLine(line.batchId, 'costPrice', e.target.value)}
+                                      placeholder="0"
+                                      className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-orange-600 focus:border-primary outline-none" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Sell ₦</label>
+                                    <input type="number" min={0} value={line.sellPrice}
+                                      onChange={e => updateEditLine(line.batchId, 'sellPrice', e.target.value)}
+                                      placeholder="0"
+                                      className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-primary focus:border-primary outline-none" />
+                                  </div>
+                                </div>
+                                {qtyChanged && (
+                                  <p className="text-[10px] text-amber-600 font-medium">
+                                    Stock will {Number(line.quantity) > line.originalQtyReceived ? 'increase' : 'decrease'} by {Math.abs(Number(line.quantity) - line.originalQtyReceived)} units
+                                  </p>
+                                )}
+                                {line.costPrice && line.sellPrice && Number(line.costPrice) > 0 && Number(line.sellPrice) > 0 && (
+                                  <p className="text-[10px] text-emerald-600 font-bold">
+                                    {(((Number(line.sellPrice) - Number(line.costPrice)) / Number(line.sellPrice)) * 100).toFixed(1)}% margin · {formatNaira(Number(line.sellPrice) - Number(line.costPrice))}/unit
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-border flex items-center gap-3 shrink-0">
+                  <div className="flex-1">
+                    <p className="text-[12px] font-bold text-navy">
+                      {editingDelivery.batches.length} item{editingDelivery.batches.length !== 1 ? 's' : ''} · {totalUnitsEdit} units
                     </p>
-                  )}
+                    {editDeliverySupplier && <p className="text-[11px] text-gray/50">{editDeliverySupplier}</p>}
+                  </div>
+                  <button type="button" onClick={() => setEditingDelivery(null)} className="h-11 px-5 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="h-11 px-6 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark disabled:opacity-50 transition-colors shadow-lg shadow-primary/20"
+                  >
+                    {isSaving ? 'Saving…' : 'Save Changes'}
+                  </button>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
-                  <input type="date" required value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Cost Price (₦) *</label>
-                  <input type="number" min={0} required value={editCostPrice} onChange={e => setEditCostPrice(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Sell Price (₦)</label>
-                  <input type="number" min={0} value={editSellPrice} onChange={e => setEditSellPrice(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none" />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                <select value={editSupplier} onChange={e => setEditSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
-                  <option value="">No supplier</option>
-                  {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes</label>
-                <input value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Optional notes…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-              </div>
-
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setEditingBatch(null)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={isSaving} className="flex-1 h-11 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors disabled:opacity-60">
-                  {isSaving ? 'Saving…' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Delete Confirm Modal */}
       {deletingBatch && (
