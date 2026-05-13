@@ -75,11 +75,10 @@ export const Suppliers: React.FC = () => {
     batches.filter(b => b.supplier === supplierName && b.productId === productId)
 
   const getSuppliedVariants = (supplierName: string, productId: string, allVariants: NonNullable<typeof products[0]['variants']>) => {
-    const suppliedIds = new Set(
-      batches
-        .filter(b => b.supplier === supplierName && b.productId === productId && b.variantId)
-        .map(b => b.variantId!)
-    )
+    const supplierBatches = batches.filter(b => b.supplier === supplierName && b.productId === productId)
+    const suppliedIds = new Set(supplierBatches.filter(b => b.variantId).map(b => b.variantId!))
+    // If batches exist but none have variantId (old data), show all variants of the product
+    if (suppliedIds.size === 0 && supplierBatches.length > 0) return allVariants
     return allVariants.filter(v => suppliedIds.has(v.id))
   }
 
