@@ -45,6 +45,15 @@ export const Batches: React.FC = () => {
   const [editDeliveryLines, setEditDeliveryLines] = useState<EditLine[]>([])
   const [isSaving, setIsSaving] = useState(false)
 
+  // Single-batch edit state
+  const [editingSingle, setEditingSingle] = useState<Batch | null>(null)
+  const [singleQty, setSingleQty] = useState('')
+  const [singleCostPrice, setSingleCostPrice] = useState('')
+  const [singleSellPrice, setSingleSellPrice] = useState('')
+  const [singleSupplier, setSingleSupplier] = useState('')
+  const [singleDate, setSingleDate] = useState('')
+  const [singleNotes, setSingleNotes] = useState('')
+
   // Delete confirm state
   const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -263,6 +272,39 @@ export const Batches: React.FC = () => {
       setEditingDelivery(null)
     } catch {
       toast.error('Failed to update delivery')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const openSingleEdit = (b: Batch) => {
+    setEditingSingle(b)
+    setSingleQty(String(b.quantityReceived))
+    setSingleCostPrice(String(b.costPrice))
+    setSingleSellPrice(b.sellPrice ? String(b.sellPrice) : '')
+    setSingleSupplier(b.supplier || '')
+    setSingleDate(new Date(b.receivedAt).toISOString().split('T')[0])
+    setSingleNotes(b.notes || '')
+  }
+
+  const handleSaveSingleEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingSingle) return
+    setIsSaving(true)
+    try {
+      await updateBatch({
+        batch: editingSingle,
+        supplier: singleSupplier || undefined,
+        costPrice: Number(singleCostPrice) || 0,
+        sellPrice: Number(singleSellPrice) || undefined,
+        notes: singleNotes || undefined,
+        receivedAt: new Date(singleDate).toISOString(),
+        newQuantityReceived: Number(singleQty),
+      })
+      toast.success('Batch updated')
+      setEditingSingle(null)
+    } catch {
+      toast.error('Failed to update batch')
     } finally {
       setIsSaving(false)
     }
@@ -516,6 +558,14 @@ export const Batches: React.FC = () => {
                     <p className="text-[11px] text-gray/40">cost value</p>
                   </div>
                 </button>
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); openDeliveryEdit(key, groupBatches) }}
+                  className="shrink-0 mr-3 w-8 h-8 flex items-center justify-center rounded-lg text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                  title="Edit whole delivery"
+                >
+                  <Pencil size={14} />
+                </button>
 
                 {/* Expanded: individual batch lines */}
                 {isExpanded && (
@@ -569,18 +619,18 @@ export const Batches: React.FC = () => {
                                 <span className="text-gray/50 italic text-[12px]">{b.notes || '—'}</span>
                               </td>
                               <td className="px-4 py-3">
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex items-center gap-1">
                                   <button
-                                    onClick={() => openDeliveryEdit(key, groupBatches)}
+                                    onClick={() => openSingleEdit(b)}
                                     className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-primary hover:bg-primary/5 transition-colors"
-                                    title="Edit delivery"
+                                    title="Edit this batch"
                                   >
                                     <Pencil size={13} />
                                   </button>
                                   <button
                                     onClick={() => setDeletingBatch(b)}
                                     className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-red-500 hover:bg-red-50 transition-colors"
-                                    title="Delete batch"
+                                    title="Delete this batch"
                                   >
                                     <Trash2 size={13} />
                                   </button>
@@ -598,6 +648,76 @@ export const Batches: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Single Batch Edit Modal */}
+      {editingSingle && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setEditingSingle(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[460px] animate-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="h-1 w-full bg-primary" />
+            <form onSubmit={handleSaveSingleEdit} className="p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-[17px] font-bold text-navy">Edit Batch</h3>
+                  <p className="text-[12px] text-gray mt-0.5">{getProductName(editingSingle.productId, editingSingle.variantId)}</p>
+                </div>
+                <button type="button" onClick={() => setEditingSingle(null)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Qty Received</label>
+                  <input
+                    type="number" required
+                    min={editingSingle.quantityReceived - editingSingle.quantityRemaining}
+                    value={singleQty} onChange={e => setSingleQty(e.target.value)}
+                    className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none"
+                  />
+                  {Number(singleQty) !== editingSingle.quantityReceived && (
+                    <p className="text-[11px] text-amber-600 font-medium">
+                      Stock will {Number(singleQty) > editingSingle.quantityReceived ? 'increase' : 'decrease'} by {Math.abs(Number(singleQty) - editingSingle.quantityReceived)} units
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
+                  <input type="date" required value={singleDate} onChange={e => setSingleDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Cost Price (₦)</label>
+                  <input type="number" min={0} required value={singleCostPrice} onChange={e => setSingleCostPrice(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Sell Price (₦)</label>
+                  <input type="number" min={0} value={singleSellPrice} onChange={e => setSingleSellPrice(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
+                <select value={singleSupplier} onChange={e => setSingleSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
+                  <option value="">No supplier</option>
+                  {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes</label>
+                <input value={singleNotes} onChange={e => setSingleNotes(e.target.value)} placeholder="Optional notes…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setEditingSingle(null)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
+                <button type="submit" disabled={isSaving} className="flex-1 h-11 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors disabled:opacity-60">
+                  {isSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Edit Delivery Modal */}
       {editingDelivery && (() => {
