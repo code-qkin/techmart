@@ -18,6 +18,7 @@ export interface ProductVariant {
 
 export interface Batch {
   id: string
+  deliveryId?: string
   productId: string
   variantId?: string
   supplier?: string
@@ -152,6 +153,15 @@ export interface AuditLog {
   entityId?: string
   details: string
   timestamp: string
+}
+
+export interface Supplier {
+  name: string
+  location?: string
+  phone?: string
+  email?: string
+  contactPerson?: string
+  notes?: string
 }
 
 export interface Notification {

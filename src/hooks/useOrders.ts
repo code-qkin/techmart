@@ -40,89 +40,34 @@ export const useOrders = () => {
 
   const addOrderMutation = useMutation({
     mutationFn: async (newOrder: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>) => {
-      const id = 'TM-' + Math.floor(1000 + Math.random() * 9000)
-      const now = new Date().toISOString()
-      const { data, error } = await supabase
-        .from('orders')
-        .insert({
-          id,
-          staff_id: newOrder.staffId || null,
-          staff_name: newOrder.staffName,
-          customer_name: newOrder.customerName,
-          customer_phone: newOrder.customerPhone,
+      // Single atomic RPC: validates stock, inserts order, deducts stock — no race condition
+      const { data, error } = await supabase.rpc('place_order', {
+        order_data: {
+          staffId: newOrder.staffId || null,
+          staffName: newOrder.staffName,
+          customerName: newOrder.customerName,
+          customerPhone: newOrder.customerPhone,
           items: newOrder.items,
           subtotal: newOrder.subtotal,
-          tax_amount: newOrder.taxAmount,
-          discount_amount: newOrder.discountAmount,
-          total_amount: newOrder.totalAmount,
-          payment_method: newOrder.paymentMethod,
-          payment_status: newOrder.paymentStatus,
-          transaction_reference: newOrder.transactionReference || null,
+          taxAmount: newOrder.taxAmount,
+          discountAmount: newOrder.discountAmount,
+          totalAmount: newOrder.totalAmount,
+          paymentMethod: newOrder.paymentMethod,
+          paymentStatus: newOrder.paymentStatus,
+          transactionReference: newOrder.transactionReference || null,
           status: newOrder.status,
           installment: newOrder.installment || null,
           notes: newOrder.notes || null,
-          created_at: now,
-          updated_at: now,
-        })
-        .select()
-        .single()
+        },
+      })
       if (error) throw error
 
-      // Deduct stock for each item sold
-      for (const item of newOrder.items) {
-        if (item.variantId) {
-          // Item sold as a variant — update the stock inside the variants JSON array
-          const { data: product } = await supabase
-            .from('products')
-            .select('variants')
-            .eq('id', item.productId)
-            .single()
-
-          if (product?.variants) {
-            const updatedVariants = (product.variants as Record<string, unknown>[]).map((v) => {
-              if (v.id !== item.variantId) return v
-              // If this sale has an IMEI, remove that specific unit from the units array
-              if (item.imei && Array.isArray(v.units)) {
-                const units = (v.units as Array<{ imei: string; supplier?: string }>).filter(u => u.imei !== item.imei)
-                return { ...v, units, stock: units.length }
-              }
-              return { ...v, stock: Math.max(0, (v.stock as number) - item.quantity) }
-            })
-            await supabase
-              .from('products')
-              .update({ variants: updatedVariants })
-              .eq('id', item.productId)
-          }
-        } else {
-          // No variant — deduct from main product stock
-          const { data: product } = await supabase
-            .from('products')
-            .select('stock')
-            .eq('id', item.productId)
-            .single()
-
-          if (product) {
-            await supabase
-              .from('products')
-              .update({ stock: Math.max(0, product.stock - item.quantity) })
-              .eq('id', item.productId)
-          }
-        }
-      }
-
-      // Deduct from batch if applicable
-      for (const item of newOrder.items) {
-        if (item.batchId) {
-          const { data: b } = await supabase.from('batches').select('quantity_remaining').eq('id', item.batchId).single()
-          if (b) {
-            await supabase.from('batches')
-              .update({ quantity_remaining: Math.max(0, (b as Record<string, unknown>).quantity_remaining as number - item.quantity) })
-              .eq('id', item.batchId)
-          }
-        }
-      }
-
-      return toOrder(data)
+      // Fetch the created order to return it
+      const orderId = (data as { id: string }).id
+      const { data: created, error: fetchError } = await supabase
+        .from('orders').select('*').eq('id', orderId).single()
+      if (fetchError) throw fetchError
+      return toOrder(created)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })

@@ -4,6 +4,7 @@ import type { Batch } from '../types'
 
 const toBatch = (row: Record<string, unknown>): Batch => ({
   id: row.id as string,
+  deliveryId: row.delivery_id as string | undefined,
   productId: row.product_id as string,
   variantId: row.variant_id as string | undefined,
   supplier: row.supplier as string | undefined,
@@ -41,6 +42,7 @@ export const useBatches = () => {
       sellPrice?: number
       notes?: string
       receivedAt: string
+      deliveryId?: string
       units?: { imei: string; supplier?: string }[]
     }) => {
       const { error } = await supabase.from('batches').insert({
@@ -53,6 +55,7 @@ export const useBatches = () => {
         sell_price: batch.sellPrice || null,
         received_at: batch.receivedAt,
         notes: batch.notes || null,
+        delivery_id: batch.deliveryId || null,
       })
       if (error) throw error
 

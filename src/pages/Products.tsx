@@ -536,7 +536,7 @@ export const Products: React.FC = () => {
                         className="w-full h-12 px-4 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none transition-all"
                       />
                       <datalist id="supplier-options">
-                        {suppliers.map(s => <option key={s} value={s} />)}
+                        {suppliers.map(s => <option key={s.name} value={s.name} />)}
                       </datalist>
                     </div>
                   </div>

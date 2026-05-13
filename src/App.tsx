@@ -47,6 +47,10 @@ function App() {
 
   useEffect(() => {
     initialize()
+
+    // Re-validate session every 10 minutes — catches deactivated accounts mid-session
+    const interval = setInterval(initialize, 10 * 60 * 1000)
+    return () => clearInterval(interval)
   }, [initialize])
 
   return (

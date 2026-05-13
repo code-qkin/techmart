@@ -33,13 +33,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (session?.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, name, role')
+        .select('id, name, role, is_active')
         .eq('id', session.user.id)
         .single()
-      if (profile) {
+      if (profile && profile.is_active) {
         set({ user: toUser(session.user.email!, profile), isLoading: false })
         return
       }
+      // Profile missing or deactivated — sign them out
+      await supabase.auth.signOut()
     }
     set({ isLoading: false })
   },
@@ -50,11 +52,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, name, role')
+      .select('id, name, role, is_active')
       .eq('id', data.user.id)
       .single()
 
-    if (!profile) return false
+    if (!profile || !profile.is_active) {
+      await supabase.auth.signOut()
+      return false
+    }
     set({ user: toUser(data.user.email!, profile) })
     return true
   },

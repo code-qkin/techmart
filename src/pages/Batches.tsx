@@ -5,7 +5,7 @@ import { useBatches } from '../hooks/useBatches'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
 import { formatNaira } from '../lib/utils'
-import { Search, Archive, X, Pencil, Trash2, Plus, Package } from 'lucide-react'
+import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck } from 'lucide-react'
 import { cn } from '../lib/utils'
 import type { Batch, Product } from '../types'
 import { toast } from 'sonner'
@@ -21,6 +21,7 @@ export const Batches: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'depleted'>('all')
   const [pinnedProductId, setPinnedProductId] = useState<string | undefined>(navState?.productId)
   const [pinnedVariantId, setPinnedVariantId] = useState<string | undefined>(navState?.variantId)
+  const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set())
 
   // Edit modal state
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null)
@@ -98,8 +99,7 @@ export const Batches: React.FC = () => {
     }))
   }, [])
 
-  // Count how many batch records will be created
-  const batchCount = useMemo(() => lineItems.reduce((sum, l) => {
+  const itemCount = useMemo(() => lineItems.reduce((sum, l) => {
     if (l.variantLines.length > 0) return sum + l.variantLines.filter(vl => Number(vl.quantity) > 0 && vl.costPrice).length
     return sum + (l.productId && l.quantity && l.costPrice ? 1 : 0)
   }, 0), [lineItems])
@@ -111,8 +111,10 @@ export const Batches: React.FC = () => {
 
   const handleMultiSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (batchCount === 0) return
+    if (itemCount === 0) return
     setIsSubmittingMulti(true)
+    // All items in this submission share one delivery ID
+    const deliveryId = crypto.randomUUID()
     try {
       for (const line of lineItems) {
         if (line.variantLines.length > 0) {
@@ -126,6 +128,7 @@ export const Batches: React.FC = () => {
               sellPrice: Number(vl.sellPrice) || undefined,
               notes: multiNotes || undefined,
               receivedAt: new Date(multiDate).toISOString(),
+              deliveryId,
             })
           }
         } else if (line.productId && line.quantity && line.costPrice) {
@@ -137,10 +140,11 @@ export const Batches: React.FC = () => {
             sellPrice: Number(line.sellPrice) || undefined,
             notes: multiNotes || undefined,
             receivedAt: new Date(multiDate).toISOString(),
+            deliveryId,
           })
         }
       }
-      toast.success(`${batchCount} batch${batchCount !== 1 ? 'es' : ''} received`)
+      toast.success(`Delivery received — ${itemCount} item${itemCount !== 1 ? 's' : ''}, ${totalUnitsToReceive} units`)
       setIsMultiOpen(false)
     } catch {
       toast.error('Failed to receive batch')
@@ -234,6 +238,36 @@ export const Batches: React.FC = () => {
     })
   }, [batches, pinnedProductId, pinnedVariantId, supplierFilter, statusFilter, search, products])
 
+  // Group filtered batches by deliveryId; solo/legacy batches use their own id as the group key
+  const displayGroups = useMemo(() => {
+    const groupMap = new Map<string, Batch[]>()
+    const keyOrder: string[] = []
+
+    for (const b of filtered) {
+      const key = b.deliveryId || b.id
+      if (!groupMap.has(key)) {
+        groupMap.set(key, [])
+        keyOrder.push(key)
+      }
+      groupMap.get(key)!.push(b)
+    }
+
+    return keyOrder.map(key => ({
+      key,
+      batches: groupMap.get(key)!,
+      isDelivery: !!groupMap.get(key)![0].deliveryId,
+    }))
+  }, [filtered])
+
+  const toggleDelivery = (key: string) => {
+    setExpandedDeliveries(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const totalCostValue = filtered.reduce((sum, b) => sum + b.quantityRemaining * b.costPrice, 0)
   const totalUnitsRemaining = filtered.reduce((sum, b) => sum + b.quantityRemaining, 0)
   const totalReceived = filtered.reduce((sum, b) => sum + b.quantityReceived, 0)
@@ -272,8 +306,8 @@ export const Batches: React.FC = () => {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white border border-border rounded-xl p-5">
-          <p className="text-[11px] font-bold text-gray uppercase tracking-wider">Total Batches</p>
-          <p className="text-2xl font-bold text-navy mt-1">{filtered.length}</p>
+          <p className="text-[11px] font-bold text-gray uppercase tracking-wider">Total Deliveries</p>
+          <p className="text-2xl font-bold text-navy mt-1">{displayGroups.length}</p>
           <p className="text-[11px] text-gray/60 mt-0.5">{totalReceived} units received</p>
         </div>
         <div className="bg-white border border-border rounded-xl p-5">
@@ -324,102 +358,154 @@ export const Batches: React.FC = () => {
         </div>
       </div>
 
-      {/* Batch table */}
-      <div className="bg-white border border-border rounded-xl overflow-hidden">
+      {/* Delivery list */}
+      <div className="space-y-3">
         {isLoading ? (
-          <div className="py-20 text-center text-gray/40 text-[13px]">Loading batches…</div>
-        ) : filtered.length === 0 ? (
-          <div className="py-20 text-center">
+          <div className="bg-white border border-border rounded-xl py-20 text-center text-gray/40 text-[13px]">Loading batches…</div>
+        ) : displayGroups.length === 0 ? (
+          <div className="bg-white border border-border rounded-xl py-20 text-center">
             <Archive size={36} className="text-gray/20 mx-auto mb-3" />
             <p className="text-[13px] text-gray/50 italic">No batches found</p>
           </div>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-border">
-              <tr className="text-[11px] text-gray font-bold uppercase tracking-wider text-left">
-                <th className="px-5 py-4">Product</th>
-                <th className="px-5 py-4">Supplier</th>
-                <th className="px-5 py-4">Received</th>
-                <th className="px-5 py-4 text-center">Qty In</th>
-                <th className="px-5 py-4 text-center">Remaining</th>
-                <th className="px-5 py-4 text-right">Cost / Unit</th>
-                <th className="px-5 py-4 text-right">Sell Price</th>
-                <th className="px-5 py-4">Notes</th>
-                <th className="px-5 py-4" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map(b => {
-                const isDepleted = b.quantityRemaining === 0
-                const pctSold = b.quantityReceived > 0
-                  ? Math.round(((b.quantityReceived - b.quantityRemaining) / b.quantityReceived) * 100)
-                  : 0
+          displayGroups.map(({ key, batches: groupBatches, isDelivery }) => {
+            const isExpanded = expandedDeliveries.has(key)
+            const first = groupBatches[0]
+            const groupTotalUnits = groupBatches.reduce((s, b) => s + b.quantityReceived, 0)
+            const groupRemaining = groupBatches.reduce((s, b) => s + b.quantityRemaining, 0)
+            const groupCost = groupBatches.reduce((s, b) => s + b.quantityRemaining * b.costPrice, 0)
+            const allDepleted = groupBatches.every(b => b.quantityRemaining === 0)
 
-                return (
-                  <tr key={b.id} className={cn('text-[13px] hover:bg-gray-50/60 transition-colors group', isDepleted && 'opacity-50')}>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">{getProductEmoji(b.productId)}</span>
-                        <div>
-                          <p className="font-bold text-navy leading-tight">{getProductName(b.productId, b.variantId)}</p>
-                          {isDepleted && (
-                            <span className="text-[10px] font-bold text-gray/40 uppercase tracking-wider">Depleted</span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={cn('text-[13px]', b.supplier ? 'text-navy font-medium' : 'text-gray/40 italic')}>
-                        {b.supplier || '—'}
+            return (
+              <div key={key} className={cn('bg-white border border-border rounded-xl overflow-hidden', allDepleted && 'opacity-60')}>
+                {/* Delivery header row */}
+                <button
+                  type="button"
+                  onClick={() => toggleDelivery(key)}
+                  className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left"
+                >
+                  <div className="shrink-0 text-gray/40">
+                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </div>
+
+                  <div className="w-9 h-9 bg-primary/5 border border-primary/10 rounded-lg flex items-center justify-center shrink-0">
+                    <Truck size={16} className="text-primary" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-[14px] font-bold text-navy">
+                        {new Date(first.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </span>
-                    </td>
-                    <td className="px-5 py-4 text-gray">
-                      {new Date(b.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td className="px-5 py-4 text-center font-bold text-navy">{b.quantityReceived}</td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={cn('font-bold', isDepleted ? 'text-gray/40' : 'text-navy')}>{b.quantityRemaining}</span>
-                        <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className={cn('h-full rounded-full transition-all', isDepleted ? 'bg-gray-300' : pctSold > 80 ? 'bg-amber-400' : 'bg-primary')}
-                            style={{ width: `${100 - pctSold}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-right font-bold text-orange-600">{formatNaira(b.costPrice)}</td>
-                    <td className="px-5 py-4 text-right">
-                      {b.sellPrice
-                        ? <span className="font-bold text-primary">{formatNaira(b.sellPrice)}</span>
-                        : <span className="text-gray/40 text-[12px]">—</span>}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-gray/60 italic text-[12px]">{b.notes || '—'}</span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => openEdit(b)}
-                          className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-primary hover:bg-primary/5 transition-colors"
-                          title="Edit batch"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => setDeletingBatch(b)}
-                          className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-red-500 hover:bg-red-50 transition-colors"
-                          title="Delete batch"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      {first.supplier && (
+                        <span className="text-[12px] font-bold text-primary bg-primary/5 border border-primary/15 px-2 py-0.5 rounded-full">
+                          {first.supplier}
+                        </span>
+                      )}
+                      {isDelivery && (
+                        <span className="text-[11px] text-gray/50">{groupBatches.length} items</span>
+                      )}
+                      {first.notes && (
+                        <span className="text-[12px] text-gray/50 italic truncate max-w-[200px]">{first.notes}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[11px] text-gray/50">{groupTotalUnits} units received</span>
+                      <span className="text-[11px] text-gray/50">·</span>
+                      <span className={cn('text-[11px] font-medium', allDepleted ? 'text-gray/40' : 'text-navy')}>
+                        {groupRemaining} remaining
+                      </span>
+                      {allDepleted && (
+                        <span className="text-[10px] font-bold text-gray/40 uppercase tracking-wider">Depleted</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <span className="text-[14px] font-bold text-primary">{formatNaira(groupCost)}</span>
+                    <p className="text-[11px] text-gray/40">cost value</p>
+                  </div>
+                </button>
+
+                {/* Expanded: individual batch lines */}
+                {isExpanded && (
+                  <div className="border-t border-border">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr className="text-[10px] text-gray font-bold uppercase tracking-wider text-left">
+                          <th className="px-5 py-2.5">Product</th>
+                          <th className="px-5 py-2.5 text-center">Qty In</th>
+                          <th className="px-5 py-2.5 text-center">Remaining</th>
+                          <th className="px-5 py-2.5 text-right">Cost / Unit</th>
+                          <th className="px-5 py-2.5 text-right">Sell Price</th>
+                          <th className="px-5 py-2.5 text-left">Notes</th>
+                          <th className="px-4 py-2.5" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {groupBatches.map(b => {
+                          const isDepleted = b.quantityRemaining === 0
+                          const pctSold = b.quantityReceived > 0
+                            ? Math.round(((b.quantityReceived - b.quantityRemaining) / b.quantityReceived) * 100)
+                            : 0
+
+                          return (
+                            <tr key={b.id} className={cn('text-[13px] hover:bg-gray-50/60 transition-colors group', isDepleted && 'opacity-40')}>
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">{getProductEmoji(b.productId)}</span>
+                                  <span className="font-semibold text-navy">{getProductName(b.productId, b.variantId)}</span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-center font-bold text-navy">{b.quantityReceived}</td>
+                              <td className="px-5 py-3">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className={cn('font-bold', isDepleted ? 'text-gray/40' : 'text-navy')}>{b.quantityRemaining}</span>
+                                  <div className="w-14 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                    <div
+                                      className={cn('h-full rounded-full transition-all', isDepleted ? 'bg-gray-300' : pctSold > 80 ? 'bg-amber-400' : 'bg-primary')}
+                                      style={{ width: `${100 - pctSold}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-right font-bold text-orange-600">{formatNaira(b.costPrice)}</td>
+                              <td className="px-5 py-3 text-right">
+                                {b.sellPrice
+                                  ? <span className="font-bold text-primary">{formatNaira(b.sellPrice)}</span>
+                                  : <span className="text-gray/40 text-[12px]">—</span>}
+                              </td>
+                              <td className="px-5 py-3">
+                                <span className="text-gray/50 italic text-[12px]">{b.notes || '—'}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => openEdit(b)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-primary hover:bg-primary/5 transition-colors"
+                                    title="Edit batch"
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingBatch(b)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray hover:text-red-500 hover:bg-red-50 transition-colors"
+                                    title="Delete batch"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </div>
 
@@ -475,7 +561,7 @@ export const Batches: React.FC = () => {
                 <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
                 <select value={editSupplier} onChange={e => setEditSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
                   <option value="">No supplier</option>
-                  {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                  {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                 </select>
               </div>
 
@@ -535,7 +621,7 @@ export const Batches: React.FC = () => {
             <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
               <div>
                 <h3 className="text-[17px] font-bold text-navy">New Batch Delivery</h3>
-                <p className="text-[12px] text-gray mt-0.5">Add all items from one delivery in a single batch</p>
+                <p className="text-[12px] text-gray mt-0.5">All items below will be grouped as one delivery</p>
               </div>
               <button onClick={() => setIsMultiOpen(false)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
                 <X size={18} />
@@ -550,7 +636,7 @@ export const Batches: React.FC = () => {
                     <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
                     <select value={multiSupplier} onChange={e => setMultiSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none">
                       <option value="">Select supplier…</option>
-                      {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                      {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -558,7 +644,7 @@ export const Batches: React.FC = () => {
                     <input type="date" required value={multiDate} onChange={e => setMultiDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
                   </div>
                   <div className="space-y-1.5 col-span-2">
-                    <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes <span className="text-gray/40 normal-case font-normal">(applies to all items)</span></label>
+                    <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes <span className="text-gray/40 normal-case font-normal">(applies to whole delivery)</span></label>
                     <input value={multiNotes} onChange={e => setMultiNotes(e.target.value)} placeholder="e.g. March shipment from Alaba market…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
                   </div>
                 </div>
@@ -566,10 +652,7 @@ export const Batches: React.FC = () => {
 
               {/* Line items — scrollable */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 no-scrollbar">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-[11px] font-bold text-gray uppercase tracking-wider">Items in this delivery</p>
-                  <span className="text-[11px] text-gray/50">{batchCount} batch record{batchCount !== 1 ? 's' : ''} will be created</span>
-                </div>
+                <p className="text-[11px] font-bold text-gray uppercase tracking-wider mb-1">Items in this delivery</p>
 
                 {lineItems.map((line, idx) => {
                   const isVariantProduct = line.variantLines.length > 0
@@ -599,7 +682,6 @@ export const Batches: React.FC = () => {
                       {/* Variant product: one row per variant */}
                       {isVariantProduct && (
                         <div className="divide-y divide-gray-100">
-                          {/* Column headers */}
                           <div className="grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-1.5 bg-gray-100/60">
                             <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Variant</span>
                             <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Qty</span>
@@ -640,7 +722,7 @@ export const Batches: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Simple product: single qty/cost/sell row */}
+                      {/* Simple product */}
                       {!isVariantProduct && line.productId && (
                         <div className="p-3 space-y-2">
                           <div className="grid grid-cols-3 gap-2">
@@ -696,7 +778,7 @@ export const Batches: React.FC = () => {
               {/* Footer */}
               <div className="px-6 py-4 border-t border-border flex items-center gap-3 shrink-0">
                 <div className="flex-1">
-                  <p className="text-[12px] font-bold text-navy">{batchCount} batch{batchCount !== 1 ? 'es' : ''} · {totalUnitsToReceive} units</p>
+                  <p className="text-[12px] font-bold text-navy">1 delivery · {itemCount} item{itemCount !== 1 ? 's' : ''} · {totalUnitsToReceive} units</p>
                   {multiSupplier && <p className="text-[11px] text-gray/50">{multiSupplier}</p>}
                 </div>
                 <button type="button" onClick={() => setIsMultiOpen(false)} className="h-11 px-5 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">
@@ -704,10 +786,10 @@ export const Batches: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingMulti || batchCount === 0}
+                  disabled={isSubmittingMulti || itemCount === 0}
                   className="h-11 px-6 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark disabled:opacity-50 transition-colors shadow-lg shadow-primary/20"
                 >
-                  {isSubmittingMulti ? 'Receiving…' : `Receive All`}
+                  {isSubmittingMulti ? 'Receiving…' : 'Receive Delivery'}
                 </button>
               </div>
             </form>

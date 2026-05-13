@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, adminSupabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import type { StaffMember } from '../types'
 
 const toStaff = (row: Record<string, unknown>): StaffMember => ({
@@ -38,45 +38,32 @@ export const useStaff = () => {
 
   const addStaffMutation = useMutation({
     mutationFn: async (staffData: NewStaffData) => {
-      if (!adminSupabase) {
-        throw new Error('Add VITE_SUPABASE_SERVICE_ROLE_KEY to .env.local to enable staff creation')
-      }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
 
-      // Create the auth account using the admin API — no rate limits,
-      // no email confirmation required, current session is untouched.
-      const { data, error: createError } = await adminSupabase.auth.admin.createUser({
-        email: staffData.email,
-        password: staffData.password,
-        email_confirm: true,
-      })
-      if (createError) throw createError
-      if (!data.user) throw new Error('Failed to create staff account')
-
-      // The DB trigger inserts a default profile row; update it with real data.
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          name: staffData.fullName,
+      const res = await supabase.functions.invoke('create-staff', {
+        body: {
+          email: staffData.email,
+          password: staffData.password,
+          fullName: staffData.fullName,
           role: staffData.role,
           phone: staffData.phone,
-          is_active: true,
-        })
-        .eq('id', data.user.id)
-      if (profileError) throw profileError
+        },
+      })
+
+      if (res.error) throw new Error(res.error.message)
+      const json = res.data as { error?: string }
+      if (json?.error) throw new Error(json.error)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
   })
 
   const deleteStaffMutation = useMutation({
     mutationFn: async (staffId: string) => {
-      if (!adminSupabase) {
-        throw new Error('Add VITE_SUPABASE_SERVICE_ROLE_KEY to .env.local to enable staff deletion')
-      }
-      // Delete from auth — the FK cascade removes the profiles row automatically
-      const { error } = await adminSupabase.auth.admin.deleteUser(staffId)
-      if (error) throw error
-      // Explicit profile delete as a safety net in case cascade isn't configured
-      await supabase.from('profiles').delete().eq('id', staffId)
+      const res = await supabase.functions.invoke('delete-staff', { body: { staffId } })
+      if (res.error) throw new Error(res.error.message)
+      const json = res.data as { error?: string }
+      if (json?.error) throw new Error(json.error)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff'] }),
   })

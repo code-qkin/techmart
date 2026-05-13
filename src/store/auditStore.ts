@@ -9,7 +9,7 @@ interface AuditState {
 export const useAuditStore = create<AuditState>(() => ({
   addLog: (entry) => {
     supabase.from('audit_logs').insert({
-      id: 'aud-' + Date.now(),
+      id: crypto.randomUUID(),
       user_id: entry.userId || null,
       user_name: entry.userName,
       user_role: entry.userRole,

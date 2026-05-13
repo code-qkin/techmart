@@ -7,8 +7,6 @@ import { getStockStatus, formatNaira } from '../lib/utils'
 import { usePrivacyStore, maskAmount } from '../store/privacyStore'
 import {
   Download,
-  Minus,
-  Plus,
   Search,
   AlertCircle,
   Package,
@@ -23,15 +21,12 @@ import {
   MousePointer2,
   ChevronDown,
   ChevronRight,
-  X,
   Banknote,
   Eye,
   EyeOff
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useProducts } from '../hooks/useProducts'
-import { useSuppliers } from '../hooks/useSuppliers'
-import { useBatches } from '../hooks/useBatches'
 import { cn } from '../lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Product, ProductVariant, VariantUnit } from '../types'
@@ -55,26 +50,12 @@ const getCategoryIcon = (category: string, name: string = '', size: number = 24)
 
 export const Inventory: React.FC = () => {
   const navigate = useNavigate()
-  const { inventory, isLoading, updateStock } = useInventory()
+  const { inventory, isLoading } = useInventory()
   const { updateProduct } = useProducts()
   const { isHidden, toggle } = usePrivacyStore()
-  const { suppliers } = useSuppliers()
-  const { receiveBatch } = useBatches()
   const [filter, setFilter] = useState('All Items')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedRows, setExpandedRows] = useState<string[]>([])
-
-  // Receive stock modal state
-  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false)
-  const [receivingProduct, setReceivingProduct] = useState<Product | null>(null)
-  const [receivingVariant, setReceivingVariant] = useState<ProductVariant | null>(null)
-  const [receiveQty, setReceiveQty] = useState('1')
-  const [receiveCostPrice, setReceiveCostPrice] = useState('')
-  const [receiveSellPrice, setReceiveSellPrice] = useState('')
-  const [receiveSupplier, setReceiveSupplier] = useState('')
-  const [receiveNotes, setReceiveNotes] = useState('')
-  const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0])
-  const [receiveUnits, setReceiveUnits] = useState<{ imei: string; supplier: string }[]>([])
 
   // Inline IMEI edit state
   const [imeiEditKey, setImeiEditKey] = useState<string | null>(null) // `${productId}:${variantId}`
@@ -116,60 +97,6 @@ export const Inventory: React.FC = () => {
     )
   }
 
-  const openReceiveModal = (product: Product, variant?: ProductVariant) => {
-    setReceivingProduct(product)
-    setReceivingVariant(variant || null)
-    setReceiveQty('1')
-    setReceiveCostPrice(variant?.costPrice ? String(variant.costPrice) : product.costPrice ? String(product.costPrice) : '')
-    setReceiveSellPrice(variant?.price ? String(variant.price) : String(product.price))
-    setReceiveSupplier('')
-    setReceiveNotes('')
-    setReceiveDate(new Date().toISOString().split('T')[0])
-    setReceiveUnits(variant ? [{ imei: '', supplier: '' }] : [])
-    setIsReceiveModalOpen(true)
-  }
-
-  const handleQtyChange = (value: string) => {
-    setReceiveQty(value)
-    if (receivingVariant) {
-      const qty = Math.max(0, Number(value) || 0)
-      setReceiveUnits(prev =>
-        Array.from({ length: qty }, (_, i) => prev[i] || { imei: '', supplier: receiveSupplier })
-      )
-    }
-  }
-
-  const handleSupplierChange = (value: string) => {
-    setReceiveSupplier(value)
-    // Auto-fill any unit rows that haven't had their supplier manually set
-    setReceiveUnits(prev => prev.map(u => u.supplier ? u : { ...u, supplier: value }))
-  }
-
-  const handleReceiveStock = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!receivingProduct || !receiveQty || !receiveCostPrice) return
-    try {
-      const filledUnits = receiveUnits
-        .filter(u => u.imei.trim())
-        .map(u => ({ ...u, supplier: u.supplier || receiveSupplier }))
-      await receiveBatch({
-        productId: receivingProduct.id,
-        variantId: receivingVariant?.id,
-        supplier: receiveSupplier || undefined,
-        quantity: Number(receiveQty),
-        costPrice: Number(receiveCostPrice),
-        sellPrice: Number(receiveSellPrice) || undefined,
-        notes: receiveNotes || undefined,
-        receivedAt: new Date(receiveDate).toISOString(),
-        units: filledUnits.length > 0 ? filledUnits : undefined,
-      })
-      toast.success(`${receiveQty} units received into stock`)
-      setIsReceiveModalOpen(false)
-    } catch {
-      toast.error('Failed to receive stock')
-    }
-  }
-
   const stats = {
     total: inventory.length,
     low: inventory.filter(p => p.stock > 0 && p.stock <= p.lowStockThreshold).length,
@@ -201,16 +128,6 @@ export const Inventory: React.FC = () => {
                           p.brand.toLowerCase().includes(searchQuery.toLowerCase())
     return matchesFilter && matchesSearch
   })
-
-  const handleAdjustStock = async (productId: string, currentStock: number, adjustment: number) => {
-    const newStock = Math.max(0, currentStock + adjustment)
-    try {
-      await updateStock({ productId, newStock })
-      toast.success("Stock updated")
-    } catch {
-      toast.error("Failed to update stock")
-    }
-  }
 
   const exportCSV = () => {
     const headers = ["Product", "Category", "Brand", "Current Stock", "Threshold", "Status"]
@@ -307,30 +224,6 @@ export const Inventory: React.FC = () => {
       header: 'Status',
       cell: ({ row }) => <StatusBadge status={getStockStatus(row.original.stock, row.original.lowStockThreshold)} />
     },
-    {
-      header: 'Action',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          {!row.original.variants?.length && (
-            <>
-              <button
-                onClick={() => handleAdjustStock(row.original.id, row.original.stock, -1)}
-                disabled={row.original.stock === 0}
-                className="w-8 h-8 flex items-center justify-center rounded-md border border-border bg-white text-gray hover:text-navy hover:border-navy disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <Minus size={14} />
-              </button>
-              <button
-                onClick={() => openReceiveModal(row.original)}
-                className="h-8 px-2.5 flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary hover:text-white font-bold text-[11px] transition-colors"
-              >
-                <Plus size={12} /> Receive
-              </button>
-            </>
-          )}
-        </div>
-      )
-    }
   ]
 
   return (
@@ -479,12 +372,6 @@ export const Inventory: React.FC = () => {
                             {v.price && <span className="text-[10px] text-primary font-bold">{formatNaira(v.price)}</span>}
                           </div>
                           <button
-                            onClick={() => openReceiveModal(row.original, v)}
-                            className="px-2 py-1 text-primary hover:bg-primary hover:text-white opacity-0 group-hover:opacity-100 transition-all bg-primary/5 rounded text-[10px] font-bold border border-primary/20"
-                          >
-                            + Receive
-                          </button>
-                          <button
                             onClick={() => navigate('/batches', { state: { productId: row.original.id, variantId: v.id } })}
                             className="px-2 py-1 text-gray hover:bg-gray-200 hover:text-navy opacity-0 group-hover:opacity-100 transition-all bg-gray-100 rounded text-[10px] font-bold border border-border"
                           >
@@ -497,7 +384,7 @@ export const Inventory: React.FC = () => {
                       <div className="border-t border-gray-100">
                         {isEditingImei ? (
                           <div className="px-3 py-3 space-y-2">
-                            <p className="text-[9px] font-bold text-gray uppercase tracking-widest">Edit IMEI & Supplier</p>
+                            <p className="text-[9px] font-bold text-gray uppercase tracking-widest">Edit IMEI</p>
                             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                               {imeiEditUnits.map((unit, ui) => (
                                 <div key={ui} className="flex items-center gap-1.5">
@@ -508,14 +395,6 @@ export const Inventory: React.FC = () => {
                                     placeholder="IMEI / Serial"
                                     className="flex-1 h-8 px-2 border border-border rounded-lg text-[11px] font-mono focus:border-primary outline-none bg-gray-50 min-w-0"
                                   />
-                                  <select
-                                    value={unit.supplier || ''}
-                                    onChange={e => setImeiEditUnits(prev => prev.map((u, j) => j === ui ? { ...u, supplier: e.target.value } : u))}
-                                    className="h-8 px-1.5 border border-border rounded-lg text-[11px] focus:border-primary outline-none bg-gray-50 shrink-0 max-w-[110px]"
-                                  >
-                                    <option value="">Supplier</option>
-                                    {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
                                 </div>
                               ))}
                             </div>
@@ -565,111 +444,6 @@ export const Inventory: React.FC = () => {
           expandedRows={expandedRows}
         />
       </div>
-
-      {/* Receive Stock Modal */}
-      {isReceiveModalOpen && receivingProduct && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setIsReceiveModalOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[520px] animate-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="h-1 w-full bg-primary shrink-0" />
-            <form onSubmit={handleReceiveStock} className="p-7 space-y-5 overflow-y-auto no-scrollbar">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-[17px] font-bold text-navy">Receive Stock</h3>
-                  <p className="text-[12px] text-gray mt-0.5">
-                    {receivingProduct.name}
-                    {receivingVariant && <span className="font-bold text-primary"> — {receivingVariant.label || [receivingVariant.color, receivingVariant.storage, receivingVariant.ram, receivingVariant.condition].filter(Boolean).join(' • ')}</span>}
-                  </p>
-                </div>
-                <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Quantity *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={receiveQty}
-                    onChange={e => handleQtyChange(e.target.value)}
-                    className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold focus:border-primary outline-none"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
-                  <input type="date" required value={receiveDate} onChange={e => setReceiveDate(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Cost Price (₦) *</label>
-                  <input type="number" min={0} required value={receiveCostPrice} onChange={e => setReceiveCostPrice(e.target.value)} placeholder="What you paid per unit" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-orange-600 focus:border-primary outline-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Sell Price (₦)</label>
-                  <input type="number" min={0} value={receiveSellPrice} onChange={e => setReceiveSellPrice(e.target.value)} placeholder="Override sell price" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] font-bold text-primary focus:border-primary outline-none" />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                <select value={receiveSupplier} onChange={e => handleSupplierChange(e.target.value)} className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
-                  <option value="">Select supplier…</option>
-                  {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes</label>
-                <input value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="e.g. Promo batch, slightly used…" className="w-full h-11 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none" />
-              </div>
-
-              {/* IMEI rows — only for variant products */}
-              {receivingVariant && receiveUnits.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-[11px] font-bold text-navy uppercase tracking-wider">IMEI / Serial Numbers <span className="text-gray/50 normal-case font-normal">(optional)</span></label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {receiveUnits.map((unit, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-gray/60 w-8 shrink-0 text-center">#{i + 1}</span>
-                        <input
-                          value={unit.imei}
-                          onChange={e => setReceiveUnits(prev => prev.map((u, j) => j === i ? { ...u, imei: e.target.value } : u))}
-                          placeholder="IMEI / Serial No."
-                          className="flex-1 h-9 px-3 border border-border rounded-lg text-[12px] font-mono focus:border-primary outline-none bg-gray-50 min-w-0"
-                        />
-                        <select
-                          value={unit.supplier}
-                          onChange={e => setReceiveUnits(prev => prev.map((u, j) => j === i ? { ...u, supplier: e.target.value } : u))}
-                          className="h-9 px-2 border border-border rounded-lg text-[12px] focus:border-primary outline-none bg-gray-50 shrink-0 max-w-[130px]"
-                        >
-                          <option value="">Supplier</option>
-                          {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {receiveCostPrice && receiveSellPrice && Number(receiveCostPrice) > 0 && Number(receiveSellPrice) > 0 && (
-                <p className="text-[12px] font-bold text-emerald-600 flex items-center gap-2">
-                  <span className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
-                    {(((Number(receiveSellPrice) - Number(receiveCostPrice)) / Number(receiveSellPrice)) * 100).toFixed(1)}% margin
-                  </span>
-                  <span className="text-emerald-500 font-medium">{formatNaira(Number(receiveSellPrice) - Number(receiveCostPrice))} profit per unit</span>
-                </p>
-              )}
-
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="flex-1 h-11 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" className="flex-1 h-11 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">Receive {receiveQty} Units</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
