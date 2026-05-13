@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   X, Download, Upload, FileSpreadsheet, CheckCircle2,
-  AlertCircle, ArrowRight, Loader2, Package
+  AlertCircle, ArrowRight, Loader2, Package, Pencil, Trash2, Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNaira, cn } from '../lib/utils'
@@ -92,6 +92,32 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [done, setDone] = useState(false)
+  const [editingRow, setEditingRow] = useState<{ gi: number; ri: number } | null>(null)
+  const [editRowData, setEditRowData] = useState<{ quantity?: number; costPrice?: number; sellPrice?: number }>({})
+
+  const deletePreviewRow = (gi: number, ri: number) => {
+    setPreview(prev =>
+      prev
+        ?.map((g, i) => i !== gi ? g : { ...g, rows: g.rows.filter((_, j) => j !== ri) })
+        .filter(g => g.rows.length > 0) ?? null
+    )
+  }
+
+  const saveEditRow = (gi: number, ri: number) => {
+    setPreview(prev =>
+      prev?.map((g, i) => i !== gi ? g : {
+        ...g,
+        rows: g.rows.map((r, j) => j !== ri ? r : {
+          ...r,
+          quantity: editRowData.quantity ?? r.quantity,
+          costPrice: editRowData.costPrice ?? r.costPrice,
+          sellPrice: editRowData.sellPrice ?? r.sellPrice,
+        }),
+      }) ?? null
+    )
+    setEditingRow(null)
+    setEditRowData({})
+  }
 
   // ── template download ────────────────────────────────────────────────────
 
@@ -486,7 +512,7 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                 </div>
               )}
 
-              {preview.map(group => (
+              {preview.map((group, gi) => (
                 <div key={group.productName} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
                   {/* Product header */}
                   <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-white">
@@ -505,22 +531,21 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                   {/* Rows */}
                   <div className="divide-y divide-gray-100">
                     {/* Column headers */}
-                    <div className={cn(
-                      'grid gap-2 px-4 py-1.5 bg-gray-100/60 text-[9px] font-bold text-gray/50 uppercase tracking-widest',
-                      group.isVariantProduct ? 'grid-cols-[1fr_60px_100px_100px]' : 'grid-cols-[1fr_60px_100px_100px]'
-                    )}>
+                    <div className="grid grid-cols-[1fr_60px_90px_90px_52px] gap-2 px-4 py-1.5 bg-gray-100/60 text-[9px] font-bold text-gray/50 uppercase tracking-widest">
                       <span>{group.isVariantProduct ? 'Variant' : 'Product'}</span>
                       <span>Qty</span>
                       <span>Cost</span>
                       <span>Sell</span>
+                      <span />
                     </div>
 
                     {group.rows.map((row, ri) => {
                       const variantLabel = [row.color, row.storage, row.ram, row.condition !== 'New' ? row.condition : ''].filter(Boolean).join(' · ') || 'Simple'
                       const isNewVariant = group.newVariantKeys.includes(row.variantKey)
+                      const isEditing = editingRow?.gi === gi && editingRow?.ri === ri
                       return (
                         <div key={ri} className={cn(
-                          'grid grid-cols-[1fr_60px_100px_100px] gap-2 px-4 py-2 items-center text-[12px]',
+                          'grid grid-cols-[1fr_60px_90px_90px_52px] gap-2 px-4 py-2 items-center text-[12px]',
                           isNewVariant ? 'bg-emerald-50/40' : 'bg-white'
                         )}>
                           <div className="flex items-center gap-1.5 min-w-0">
@@ -529,9 +554,59 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase shrink-0">New</span>
                             )}
                           </div>
-                          <span className="font-bold text-navy">{row.quantity}</span>
-                          <span className="font-bold text-orange-600">{row.costPrice > 0 ? formatNaira(row.costPrice) : '—'}</span>
-                          <span className="font-bold text-primary">{row.sellPrice ? formatNaira(row.sellPrice) : '—'}</span>
+
+                          {isEditing ? (
+                            <>
+                              <input
+                                type="number" min={1} autoFocus
+                                defaultValue={row.quantity}
+                                onChange={e => setEditRowData(d => ({ ...d, quantity: Number(e.target.value) || 1 }))}
+                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-center outline-none"
+                              />
+                              <input
+                                type="number" min={0}
+                                defaultValue={row.costPrice}
+                                onChange={e => setEditRowData(d => ({ ...d, costPrice: Number(e.target.value) }))}
+                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-orange-600 outline-none"
+                              />
+                              <input
+                                type="number" min={0}
+                                defaultValue={row.sellPrice ?? ''}
+                                onChange={e => setEditRowData(d => ({ ...d, sellPrice: Number(e.target.value) || undefined }))}
+                                className="w-full h-7 px-1.5 border border-primary rounded-md text-[11px] font-bold text-primary outline-none"
+                              />
+                              <div className="flex items-center gap-0.5">
+                                <button onClick={() => saveEditRow(gi, ri)} className="w-6 h-6 flex items-center justify-center rounded text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                  <Check size={12} />
+                                </button>
+                                <button onClick={() => setEditingRow(null)} className="w-6 h-6 flex items-center justify-center rounded text-gray hover:bg-gray-100 transition-colors">
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-navy">{row.quantity}</span>
+                              <span className="font-bold text-orange-600">{row.costPrice > 0 ? formatNaira(row.costPrice) : '—'}</span>
+                              <span className="font-bold text-primary">{row.sellPrice ? formatNaira(row.sellPrice) : '—'}</span>
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={() => { setEditingRow({ gi, ri }); setEditRowData({}) }}
+                                  className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                                  title="Edit row"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                                <button
+                                  onClick={() => deletePreviewRow(gi, ri)}
+                                  className="w-6 h-6 flex items-center justify-center rounded text-gray/40 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                  title="Remove row"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       )
                     })}
