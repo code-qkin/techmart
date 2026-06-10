@@ -43,6 +43,8 @@ export const Orders: React.FC = () => {
   const [isEditingFullOrder, setIsEditingFullOrder] = useState(false)
   const [printableOrder, setPrintableOrder] = useState<Order | null>(null)
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false)
+  const [showPaymentPanel, setShowPaymentPanel] = useState(false)
+  const [detailDiscount, setDetailDiscount] = useState(0)
 
   // New Order State
   const [step, setStep] = useState(1)
@@ -209,9 +211,57 @@ export const Orders: React.FC = () => {
     setTransactionRef(selectedOrder.transactionReference || '')
     setNotes(selectedOrder.notes || '')
     setIsEditingFullOrder(true)
+    setIsEditingFullOrder(true)
     setIsDetailModalOpen(false)
     setIsNewOrderModalOpen(true)
     setStep(1)
+  }
+
+  const handleSaveDiscount = async () => {
+    if (!selectedOrder) return
+    const newTotal = Math.max(0, selectedOrder.subtotal - detailDiscount)
+    try {
+      const updated = await updateOrder({ ...selectedOrder, discountAmount: detailDiscount, totalAmount: newTotal })
+      setSelectedOrder(updated)
+      toast.success('Discount updated')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update discount.'))
+    }
+  }
+
+  const handleConfirmPaymentSubmit = async () => {
+    if (!selectedOrder) return
+    const effectiveTotal = Math.max(0, selectedOrder.subtotal - detailDiscount)
+    if (paymentMethod === 'Layaway') {
+      if (!depositAmount || depositAmount <= 0) { toast.error('Enter a deposit amount for layaway'); return }
+      if (!layawayDueDate) { toast.error('Enter a due date for layaway'); return }
+      if (depositAmount >= effectiveTotal) { toast.error('Deposit must be less than total – use Cash/POS for full payment'); return }
+    }
+
+    try {
+      await updateOrder({
+        ...selectedOrder,
+        discountAmount: detailDiscount,
+        totalAmount: effectiveTotal,
+        paymentMethod,
+        paymentStatus: paymentMethod === 'Layaway' ? 'Partial' : 'Paid',
+        transactionReference: transactionRef,
+        status: paymentMethod === 'Layaway' ? 'Pending' : 'Completed',
+        installment: paymentMethod === 'Layaway' ? {
+          depositAmount,
+          remainingAmount: effectiveTotal - depositAmount,
+          dueDate: layawayDueDate,
+          isPaid: false,
+        } : undefined,
+      })
+      toast.success('Payment confirmed successfully!')
+      setShowPaymentPanel(false)
+      setSelectedOrder(null)
+      setIsDetailModalOpen(false)
+      setDetailDiscount(0)
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to confirm payment.'))
+    }
   }
 
   const handleConfirmOrder = async () => {
@@ -223,7 +273,7 @@ export const Orders: React.FC = () => {
     }
 
     const orderData = {
-      staffId: user?.id || '1',
+      staffId: user?.id || undefined, // undefined becomes null in RPC, avoiding UUID 400 error
       staffName: user?.name || 'Unknown',
       customerName,
       customerPhone,
@@ -250,15 +300,10 @@ export const Orders: React.FC = () => {
       discountAmount,
       totalAmount,
       paymentMethod,
-      paymentStatus: paymentMethod === 'Layaway' ? ('Partial' as const) : ('Paid' as const),
-      transactionReference: transactionRef,
-      status: isEditingFullOrder ? (selectedOrder?.status || 'Completed') : (paymentMethod === 'Layaway' ? 'Pending' : 'Completed') as Order['status'],
-      installment: paymentMethod === 'Layaway' ? {
-        depositAmount,
-        remainingAmount: totalAmount - depositAmount,
-        dueDate: layawayDueDate,
-        isPaid: false,
-      } : undefined,
+      paymentStatus: 'Unpaid' as const,
+      transactionReference: '',
+      status: 'Pending' as const,
+      installment: undefined,
       notes,
     }
 
@@ -376,7 +421,7 @@ export const Orders: React.FC = () => {
       header: 'Action',
       cell: ({ row }) => (
         <button
-          onClick={() => { setSelectedOrder(row.original); setIsDetailModalOpen(true) }}
+          onClick={() => { setSelectedOrder(row.original); setDetailDiscount(row.original.discountAmount); setIsDetailModalOpen(true) }}
           className="p-2 text-gray hover:text-primary hover:bg-primary/5 rounded-md transition-colors"
         >
           <Eye size={18} />
@@ -801,43 +846,6 @@ export const Orders: React.FC = () => {
                         <input required placeholder="e.g. 08012345678" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full h-10 bg-transparent border-b border-border text-[15px] focus:outline-none focus:border-primary transition-all" />
                       </div>
                     </div>
-
-                    {/* Payment Method */}
-                    <div className="space-y-4">
-                      <h3 className="text-[11px] font-bold text-navy uppercase tracking-[0.15em]">Payment Method</h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['Cash', 'POS', 'Transfer', 'Layaway'] as Order['paymentMethod'][]).map((id) => (
-                          <button key={id} onClick={() => setPaymentMethod(id)} className={cn('py-2 px-3 rounded-lg text-[12px] font-bold transition-all border', paymentMethod === id ? 'bg-navy text-white border-navy' : 'border-border text-gray hover:border-gray-400')}>{id}</button>
-                        ))}
-                      </div>
-                      {paymentMethod === 'Transfer' && (
-                        <div className="animate-in slide-in-from-top-2 duration-200">
-                          <label className="text-[10px] font-bold text-gray uppercase block mb-1">Ref ID</label>
-                          <input placeholder="Reference number" value={transactionRef} onChange={(e) => setTransactionRef(e.target.value)} className="w-full h-10 bg-transparent border-b border-border text-[14px] focus:outline-none focus:border-primary transition-all" />
-                        </div>
-                      )}
-                      {paymentMethod === 'Layaway' && (
-                        <div className="space-y-4 animate-in slide-in-from-top-2 duration-200 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                          <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wide">Layaway / Installment</p>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray uppercase block">Deposit Amount (₦)</label>
-                            <input type="number" min={1} placeholder="0" value={depositAmount || ''} onChange={(e) => setDepositAmount(Number(e.target.value))} className="w-full h-10 bg-transparent border-b border-amber-300 text-[14px] focus:outline-none transition-all" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray uppercase block flex items-center gap-1"><Calendar size={11} /> Balance Due Date</label>
-                            <input type="date" value={layawayDueDate} onChange={(e) => setLayawayDueDate(e.target.value)} className="w-full h-10 bg-transparent border-b border-amber-300 text-[14px] focus:outline-none transition-all" />
-                          </div>
-                          {depositAmount > 0 && (
-                            <div className="text-[12px] text-amber-700 font-medium">
-                              Balance: {formatNaira(Math.max(0, totalAmount - depositAmount))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-
-
                     {/* Totals */}
                     <div className="space-y-4 pt-6 border-t border-border">
                       <div className="space-y-3">
@@ -852,16 +860,10 @@ export const Orders: React.FC = () => {
                             <input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="w-24 h-8 bg-transparent text-[14px] text-right font-bold text-red-600 outline-none" />
                           </div>
                         </div>
-                        {paymentMethod === 'Layaway' && depositAmount > 0 && (
-                          <div className="flex justify-between text-[14px]">
-                            <span className="text-amber-600">Deposit Today</span>
-                            <span className="font-bold text-amber-600">{formatNaira(depositAmount)}</span>
-                          </div>
-                        )}
                       </div>
                       <div className="pt-6 border-t border-navy/10 flex justify-between items-end">
                         <span className="text-navy font-bold text-[12px] uppercase tracking-widest pb-1">
-                          {paymentMethod === 'Layaway' ? 'Total Payable' : 'Total Payable'}
+                          Total Payable
                         </span>
                         <span className="text-3xl font-black text-navy">{formatNaira(totalAmount)}</span>
                       </div>
@@ -886,8 +888,8 @@ export const Orders: React.FC = () => {
                       <span className="text-lg font-bold text-primary">{formatNaira(totalAmount)}</span>
                     </div>
                     <div className="p-4 flex justify-between items-center">
-                      <span className="text-gray font-medium uppercase tracking-widest text-[10px]">Method</span>
-                      <span className="font-bold text-navy">{paymentMethod}</span>
+                      <span className="text-gray font-medium uppercase tracking-widest text-[10px]">Status</span>
+                      <span className="font-bold text-amber-500">Pending Payment</span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-3 w-full max-w-sm pt-4">
@@ -921,7 +923,7 @@ export const Orders: React.FC = () => {
                     onClick={() => step === 1 ? setStep(2) : handleConfirmOrder()}
                     className="h-11 px-8 bg-primary text-white rounded-lg font-bold text-[14px] hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
                   >
-                    {step === 1 ? 'Checkout' : isEditingFullOrder ? 'Update Order' : 'Confirm & Pay'} <ArrowRight size={18} />
+                    {step === 1 ? 'Checkout' : isEditingFullOrder ? 'Update Order' : 'Confirm Order'} <ArrowRight size={18} />
                   </button>
                 </div>
               </div>
@@ -933,7 +935,7 @@ export const Orders: React.FC = () => {
       {/* ── Order Detail Modal ── */}
       {isDetailModalOpen && selectedOrder && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-navy/60 backdrop-blur-sm" onClick={() => setIsDetailModalOpen(false)} />
+          <div className="absolute inset-0 bg-navy/60 backdrop-blur-sm" onClick={() => { setIsDetailModalOpen(false); setShowPaymentPanel(false); setDetailDiscount(0) }} />
           <div className="relative w-full max-w-[800px] bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-border flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-4">
@@ -948,7 +950,7 @@ export const Orders: React.FC = () => {
                   <p className="text-[12px] text-gray font-medium uppercase tracking-widest">Transaction #{selectedOrder.id}</p>
                 </div>
               </div>
-              <button onClick={() => setIsDetailModalOpen(false)} className="p-2 text-gray hover:bg-gray-100 rounded-full transition-colors">
+              <button onClick={() => { setIsDetailModalOpen(false); setShowPaymentPanel(false); setDetailDiscount(0) }} className="p-2 text-gray hover:bg-gray-100 rounded-full transition-colors">
                 <X size={24} />
               </button>
             </div>
@@ -965,7 +967,7 @@ export const Orders: React.FC = () => {
                 <div className="space-y-4">
                   <h4 className="text-[11px] font-bold text-gray uppercase tracking-[0.2em]">Transaction</h4>
                   <div>
-                    <p className="text-[15px] font-bold text-navy">{selectedOrder.paymentMethod} Payment</p>
+                    <p className="text-[15px] font-bold text-navy">{selectedOrder.paymentStatus === 'Unpaid' ? 'Awaiting Payment' : `${selectedOrder.paymentMethod} Payment`}</p>
                     <p className="text-[13px] text-gray mt-1">{new Date(selectedOrder.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>
@@ -1024,15 +1026,37 @@ export const Orders: React.FC = () => {
                       <td colSpan={3} className="px-5 py-2 text-right text-[12px] text-gray font-medium pt-4">Subtotal</td>
                       <td className="px-5 py-2 text-right text-[13px] font-bold text-navy pt-4">{formatNaira(selectedOrder.subtotal)}</td>
                     </tr>
-                    {selectedOrder.discountAmount > 0 && (
-                      <tr>
-                        <td colSpan={3} className="px-5 py-2 text-right text-[12px] text-red-500 font-medium">Discount</td>
-                        <td className="px-5 py-2 text-right text-[13px] font-bold text-red-500">–{formatNaira(selectedOrder.discountAmount)}</td>
-                      </tr>
-                    )}
+                    <tr>
+                      <td colSpan={3} className="px-5 py-2 text-right text-[12px] text-red-500 font-medium">Discount</td>
+                      <td className="px-5 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-[12px] font-bold text-gray">₦</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={detailDiscount || ''}
+                            onChange={e => setDetailDiscount(Number(e.target.value))}
+                            placeholder="0"
+                            className="w-20 text-right text-[13px] font-bold text-red-500 bg-transparent border-b border-dashed border-red-200 outline-none focus:border-red-400"
+                          />
+                        </div>
+                      </td>
+                    </tr>
                     <tr>
                       <td colSpan={3} className="px-5 py-4 text-right text-[13px] font-bold text-primary uppercase">Grand Total</td>
-                      <td className="px-5 py-4 text-right text-xl font-bold text-primary">{formatNaira(selectedOrder.totalAmount)}</td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-xl font-bold text-primary">{formatNaira(Math.max(0, selectedOrder.subtotal - detailDiscount))}</span>
+                          {detailDiscount !== selectedOrder.discountAmount && (
+                            <button
+                              onClick={handleSaveDiscount}
+                              className="text-[10px] font-bold text-white bg-primary px-2.5 py-1 rounded-full hover:bg-primary-dark transition-colors"
+                            >
+                              Save Discount
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1045,23 +1069,96 @@ export const Orders: React.FC = () => {
                 </div>
               )}
 
+              {/* Inline Payment Panel */}
+              {showPaymentPanel && selectedOrder.paymentStatus === 'Unpaid' && (
+                <div className="mt-6 pt-6 border-t border-border space-y-5 animate-in slide-in-from-bottom-2 duration-200">
+                  <h4 className="text-[11px] font-bold text-navy uppercase tracking-[0.15em]">Confirm Payment</h4>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-border">
+                    <span className="text-[12px] font-medium text-gray uppercase tracking-widest">Total Due</span>
+                    <span className="text-2xl font-black text-navy">{formatNaira(selectedOrder.totalAmount)}</span>
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-bold text-gray uppercase tracking-[0.15em]">Payment Method</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['Cash', 'POS', 'Transfer', 'Layaway'] as Order['paymentMethod'][]).map((id) => (
+                        <button key={id} onClick={() => setPaymentMethod(id)}
+                          className={cn('py-3 px-2 rounded-xl text-[13px] font-bold transition-all border',
+                            paymentMethod === id ? 'bg-navy text-white border-navy shadow-md' : 'border-border text-gray hover:border-gray-400 bg-white')}>
+                          {id}
+                        </button>
+                      ))}
+                    </div>
+                    {paymentMethod === 'Transfer' && (
+                      <div className="animate-in slide-in-from-top-2 duration-200 pt-1">
+                        <label className="text-[11px] font-bold text-gray uppercase block mb-1.5">Transaction Reference</label>
+                        <input placeholder="Enter reference number..." value={transactionRef} onChange={(e) => setTransactionRef(e.target.value)} className="w-full h-11 px-4 bg-white border border-border rounded-xl text-[14px] focus:outline-none focus:border-primary transition-all" />
+                      </div>
+                    )}
+                    {paymentMethod === 'Layaway' && (
+                      <div className="space-y-4 animate-in slide-in-from-top-2 duration-200 p-5 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-amber-900 uppercase block">Deposit Amount (₦)</label>
+                          <input type="number" min={1} placeholder="0" value={depositAmount || ''} onChange={(e) => setDepositAmount(Number(e.target.value))} className="w-full h-11 px-4 bg-white border border-amber-300 rounded-xl text-[14px] focus:outline-none focus:border-amber-500 transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-amber-900 uppercase block flex items-center gap-1.5"><Calendar size={13} /> Balance Due Date</label>
+                          <input type="date" value={layawayDueDate} onChange={(e) => setLayawayDueDate(e.target.value)} className="w-full h-11 px-4 bg-white border border-amber-300 rounded-xl text-[14px] focus:outline-none focus:border-amber-500 transition-all" />
+                        </div>
+                        {depositAmount > 0 && (
+                          <div className="text-[13px] text-amber-800 font-bold pt-2 border-t border-amber-200/50">
+                            Remaining Balance: {formatNaira(Math.max(0, selectedOrder.totalAmount - depositAmount))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
             </div>
 
             <div className="p-6 border-t border-border bg-gray-50/50 flex gap-3">
-              {selectedOrder.status === 'Completed' && (
-                <button
-                  onClick={() => setIsRefundModalOpen(true)}
-                  className="flex-1 h-12 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl font-bold text-[13px] hover:bg-purple-100 flex items-center justify-center gap-2 transition-all"
-                >
-                  <RotateCcw size={16} /> Return & Refund
-                </button>
+              {showPaymentPanel ? (
+                <>
+                  <button
+                    onClick={() => setShowPaymentPanel(false)}
+                    className="flex-1 h-12 border border-border bg-white rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmPaymentSubmit}
+                    className="flex-[2] h-12 bg-green-600 text-white rounded-xl font-bold text-[14px] hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 size={18} /> Mark as Paid
+                  </button>
+                </>
+              ) : (
+                <>
+                  {selectedOrder.paymentStatus === 'Unpaid' && (
+                    <button
+                      onClick={() => { setPaymentMethod('Cash'); setShowPaymentPanel(true) }}
+                      className="flex-1 h-12 bg-green-600 text-white rounded-xl font-bold text-[14px] hover:bg-green-700 flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-600/20"
+                    >
+                      <Receipt size={18} /> Confirm Payment
+                    </button>
+                  )}
+                  {selectedOrder.status === 'Completed' && (
+                    <button
+                      onClick={() => setIsRefundModalOpen(true)}
+                      className="flex-1 h-12 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl font-bold text-[13px] hover:bg-purple-100 flex items-center justify-center gap-2 transition-all"
+                    >
+                      <RotateCcw size={16} /> Return & Refund
+                    </button>
+                  )}
+                  <button onClick={handleStartEditFullOrder} className="flex-1 h-12 border border-border bg-white rounded-xl font-bold text-[13px] hover:bg-gray-50 flex items-center justify-center gap-2 transition-all">
+                    <Edit size={16} /> Edit
+                  </button>
+                  <button onClick={() => handlePrint(selectedOrder)} className="flex-1 h-12 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20">
+                    <Printer size={18} /> Print
+                  </button>
+                </>
               )}
-              <button onClick={handleStartEditFullOrder} className="flex-1 h-12 border border-border bg-white rounded-xl font-bold text-[13px] hover:bg-gray-50 flex items-center justify-center gap-2 transition-all">
-                <Edit size={16} /> Edit
-              </button>
-              <button onClick={() => handlePrint(selectedOrder)} className="flex-1 h-12 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20">
-                <Printer size={18} /> Print
-              </button>
             </div>
           </div>
         </div>
