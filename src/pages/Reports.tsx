@@ -128,9 +128,10 @@ export const Reports: React.FC = () => {
   const staffPerf = useMemo(() => {
     const map: Record<string, { name: string; revenue: number; orders: number }> = {}
     salesOrders.forEach((o) => {
-      if (!map[o.staffId]) map[o.staffId] = { name: o.staffName, revenue: 0, orders: 0 }
-      map[o.staffId].revenue += o.totalAmount
-      map[o.staffId].orders += 1
+      const key = o.staffId ?? o.staffName
+      if (!map[key]) map[key] = { name: o.staffName, revenue: 0, orders: 0 }
+      map[key].revenue += o.totalAmount
+      map[key].orders += 1
     })
     return Object.values(map).sort((a, b) => b.revenue - a.revenue)
   }, [salesOrders])
