@@ -75,7 +75,7 @@ export interface Installment {
 
 export interface Order {
   id: string
-  staffId: string
+  staffId?: string
   staffName: string
   customerName: string
   customerPhone: string
