@@ -69,7 +69,12 @@ export const Dashboard: React.FC = () => {
     [orders, dateFilter]
   )
 
-  const filteredRevenue = useMemo(() => salesOrders.reduce((s, o) => s + o.totalAmount, 0), [salesOrders])
+  const filteredRevenue = useMemo(() =>
+    salesOrders
+      .filter((o) => o.status !== 'Returned' && o.status !== 'Refunded')
+      .reduce((s, o) => s + o.totalAmount, 0),
+    [salesOrders]
+  )
   const filteredOrderCount = salesOrders.length
 
   const lowStockCount = useMemo(() =>
@@ -85,7 +90,7 @@ export const Dashboard: React.FC = () => {
       return Array.from({ length: 24 }, (_, h) => {
         const revenue = orders
           .filter((o) => {
-            if (!o.status) return false
+            if (o.status === 'Returned' || o.status === 'Refunded') return false
             const t = new Date(o.createdAt)
             return t.toDateString() === now.toDateString() && t.getHours() === h
           })
@@ -103,7 +108,7 @@ export const Dashboard: React.FC = () => {
         const next = new Date(d); next.setDate(d.getDate() + 1)
         const revenue = orders
           .filter((o) => {
-            if (!o.status) return false
+            if (o.status === 'Returned' || o.status === 'Refunded') return false
             const t = new Date(o.createdAt)
             return t >= d && t < next
           })
@@ -120,7 +125,7 @@ export const Dashboard: React.FC = () => {
         const next = new Date(d); next.setDate(d.getDate() + 1)
         const revenue = orders
           .filter((o) => {
-            if (!o.status) return false
+            if (o.status === 'Returned' || o.status === 'Refunded') return false
             const t = new Date(o.createdAt)
             return t >= d && t < next
           })
@@ -136,7 +141,7 @@ export const Dashboard: React.FC = () => {
       const next = new Date(d.getFullYear(), d.getMonth() + 1, 1)
       const revenue = orders
         .filter((o) => {
-          if (o.status !== 'Completed' && o.status !== 'Processing') return false
+          if (o.status === 'Returned' || o.status === 'Refunded') return false
           const t = new Date(o.createdAt)
           return t >= d && t < next
         })
