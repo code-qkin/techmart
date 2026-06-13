@@ -5,8 +5,11 @@ import { ExcelImport } from '../components/ExcelImport'
 import { useBatches } from '../hooks/useBatches'
 import { useProducts } from '../hooks/useProducts'
 import { useSuppliers } from '../hooks/useSuppliers'
+import { useReceiving } from '../hooks/useReceiving'
+import type { ReceiveLineItem } from '../hooks/useReceiving'
+import { ProductSearch } from '../components/shared/ProductSearch'
 import { formatNaira } from '../lib/utils'
-import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet, Download } from 'lucide-react'
+import { Search, Archive, X, Pencil, Trash2, Plus, Package, ChevronDown, ChevronRight, Truck, FileSpreadsheet, Download, PackagePlus } from 'lucide-react'
 import { getProductIcon } from '../lib/productIcon'
 import { downloadImportTemplate } from '../lib/importTemplate'
 import { cn } from '../lib/utils'
@@ -64,120 +67,169 @@ export const Batches: React.FC = () => {
   const [deletingDelivery, setDeletingDelivery] = useState<{ key: string; batches: Batch[] } | null>(null)
   const [isDeletingDelivery, setIsDeletingDelivery] = useState(false)
 
-  // Multi-product batch receive state
-  interface VariantLine { variantId: string; label: string; quantity: string; costPrice: string; sellPrice: string }
-  interface LineItem { key: number; productId: string; quantity: string; costPrice: string; sellPrice: string; variantLines: VariantLine[] }
+  // ── Receive modal state ──────────────────────────────────────────────────
+  const { receive, isReceiving } = useReceiving()
+  const { ensureSupplier } = useSuppliers()
 
-  const makeVariantLines = (p: Product): VariantLine[] =>
-    (p.variants || []).map(v => ({
-      variantId: v.id,
-      label: v.label || [v.color, v.storage, v.ram, v.condition].filter(Boolean).join(' · '),
-      quantity: '',
-      costPrice: v.costPrice ? String(v.costPrice) : (p.costPrice ? String(p.costPrice) : ''),
-      sellPrice: v.price ? String(v.price) : (p.price ? String(p.price) : ''),
-    }))
+  type ReceiveMode = 'batch' | 'single'
 
-  const blankLine = (key: number): LineItem => ({ key, productId: '', quantity: '1', costPrice: '', sellPrice: '', variantLines: [] })
-
-  const [isImportOpen, setIsImportOpen] = useState(false)
-  const [isMultiOpen, setIsMultiOpen] = useState(false)
-  const [multiSupplier, setMultiSupplier] = useState('')
-  const [multiDate, setMultiDate] = useState(new Date().toISOString().split('T')[0])
-  const [multiNotes, setMultiNotes] = useState('')
-  const [lineItems, setLineItems] = useState<LineItem[]>([])
-  const [lineCounter, setLineCounter] = useState(0)
-  const [isSubmittingMulti, setIsSubmittingMulti] = useState(false)
-
-  const openMultiModal = () => {
-    setMultiSupplier('')
-    setMultiDate(new Date().toISOString().split('T')[0])
-    setMultiNotes('')
-    setLineItems([blankLine(0)])
-    setLineCounter(1)
-    setIsMultiOpen(true)
+  interface ReceiveLine {
+    key: number
+    // product search
+    searchText: string
+    matchedProductId: string | null   // null = new product
+    isNewProduct: boolean
+    productName: string
+    productBrand: string
+    productCategory: Product['category']
+    // variant
+    hasVariant: boolean
+    storage: string
+    color: string
+    ram: string
+    condition: 'New' | 'Open Box' | 'Pre-owned'
+    // pricing
+    quantity: string
+    costPrice: string
+    sellPrice: string
+    // imeis
+    imeisText: string
   }
 
-  const addLine = () => {
-    setLineItems(prev => [...prev, blankLine(lineCounter)])
+  const blankReceiveLine = (key: number): ReceiveLine => ({
+    key,
+    searchText: '',
+    matchedProductId: null,
+    isNewProduct: false,
+    productName: '',
+    productBrand: '',
+    productCategory: 'Phones',
+    hasVariant: false,
+    storage: '',
+    color: '',
+    ram: '',
+    condition: 'New',
+    quantity: '1',
+    costPrice: '',
+    sellPrice: '',
+    imeisText: '',
+  })
+
+  const [isReceiveOpen, setIsReceiveOpen] = useState(false)
+  const [receiveMode, setReceiveMode] = useState<ReceiveMode>('batch')
+  const [receiveSupplier, setReceiveSupplier] = useState('')
+  const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0])
+  const [receiveNotes, setReceiveNotes] = useState('')
+  const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
+  const [lineCounter, setLineCounter] = useState(0)
+  const [isImportOpen, setIsImportOpen] = useState(false)
+
+  const openReceiveModal = (mode: ReceiveMode = 'batch') => {
+    setReceiveMode(mode)
+    setReceiveSupplier('')
+    setReceiveDate(new Date().toISOString().split('T')[0])
+    setReceiveNotes('')
+    setReceiveLines([blankReceiveLine(0)])
+    setLineCounter(1)
+    setIsReceiveOpen(true)
+  }
+
+  const addReceiveLine = () => {
+    setReceiveLines(prev => [...prev, blankReceiveLine(lineCounter)])
     setLineCounter(c => c + 1)
   }
 
-  const removeLine = (key: number) => setLineItems(prev => prev.filter(l => l.key !== key))
+  const removeReceiveLine = (key: number) =>
+    setReceiveLines(prev => prev.filter(l => l.key !== key))
 
-  const selectProduct = useCallback((key: number, productId: string, allProducts: Product[]) => {
-    const p = allProducts.find(x => x.id === productId)
-    setLineItems(prev => prev.map(l => {
-      if (l.key !== key) return l
-      if (!p) return { ...l, productId: '', variantLines: [], costPrice: '', sellPrice: '' }
-      if ((p.variants?.length || 0) > 0) {
-        return { ...l, productId, variantLines: makeVariantLines(p), quantity: '', costPrice: '', sellPrice: '' }
-      }
-      return { ...l, productId, variantLines: [], costPrice: p.costPrice ? String(p.costPrice) : '', sellPrice: p.price ? String(p.price) : '' }
-    }))
+  const updateLine = useCallback(<K extends keyof ReceiveLine>(key: number, field: K, value: ReceiveLine[K]) => {
+    setReceiveLines(prev => prev.map(l => l.key === key ? { ...l, [field]: value } : l))
   }, [])
 
-  const updateLineField = useCallback((key: number, field: 'quantity' | 'costPrice' | 'sellPrice', value: string) => {
-    setLineItems(prev => prev.map(l => l.key === key ? { ...l, [field]: value } : l))
+  const handleProductSelect = useCallback((
+    key: number,
+    match: { id: string; name: string; brand: string; category: Product['category'] } | null,
+    searchText: string,
+  ) => {
+    if (match) {
+      // Existing product selected
+      setReceiveLines(prev => prev.map(l => l.key !== key ? l : {
+        ...l,
+        searchText: match.name,
+        matchedProductId: match.id,
+        isNewProduct: false,
+        productName: match.name,
+        productBrand: match.brand,
+        productCategory: match.category,
+      }))
+    } else {
+      // "Create new" chosen or typing freely
+      setReceiveLines(prev => prev.map(l => l.key !== key ? l : {
+        ...l,
+        searchText,
+        matchedProductId: null,
+        isNewProduct: searchText.trim().length > 0,
+        productName: searchText.trim(),
+      }))
+    }
   }, [])
 
-  const updateVariantLine = useCallback((key: number, variantId: string, field: 'quantity' | 'costPrice' | 'sellPrice', value: string) => {
-    setLineItems(prev => prev.map(l => {
-      if (l.key !== key) return l
-      return { ...l, variantLines: l.variantLines.map(vl => vl.variantId === variantId ? { ...vl, [field]: value } : vl) }
-    }))
-  }, [])
+  const receiveTotalUnits = useMemo(() =>
+    receiveLines.reduce((s, l) => s + (Number(l.quantity) || 0), 0),
+  [receiveLines])
 
-  const itemCount = useMemo(() => lineItems.reduce((sum, l) => {
-    if (l.variantLines.length > 0) return sum + l.variantLines.filter(vl => Number(vl.quantity) > 0).length
-    return sum + (l.productId && Number(l.quantity) > 0 ? 1 : 0)
-  }, 0), [lineItems])
+  const receiveReadyCount = useMemo(() =>
+    receiveLines.filter(l => l.productName.trim() && Number(l.costPrice) > 0 && Number(l.quantity) > 0).length,
+  [receiveLines])
 
-  const totalUnitsToReceive = useMemo(() => lineItems.reduce((sum, l) => {
-    if (l.variantLines.length > 0) return sum + l.variantLines.reduce((s, vl) => s + (Number(vl.quantity) || 0), 0)
-    return sum + (Number(l.quantity) || 0)
-  }, 0), [lineItems])
-
-  const handleMultiSubmit = async (e: React.FormEvent) => {
+  const handleReceiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (itemCount === 0) return
-    setIsSubmittingMulti(true)
-    // All items in this submission share one delivery ID
-    const deliveryId = crypto.randomUUID()
-    try {
-      for (const line of lineItems) {
-        if (line.variantLines.length > 0) {
-          for (const vl of line.variantLines.filter(vl => Number(vl.quantity) > 0)) {
-            await receiveBatch({
-              productId: line.productId,
-              variantId: vl.variantId,
-              supplier: multiSupplier || undefined,
-              quantity: Number(vl.quantity),
-              costPrice: Number(vl.costPrice) || 0,
-              sellPrice: Number(vl.sellPrice) || undefined,
-              notes: multiNotes || undefined,
-              receivedAt: new Date(multiDate).toISOString(),
-              deliveryId,
-            })
-          }
-        } else if (line.productId && Number(line.quantity) > 0) {
-          await receiveBatch({
-            productId: line.productId,
-            supplier: multiSupplier || undefined,
-            quantity: Number(line.quantity),
-            costPrice: Number(line.costPrice) || 0,
-            sellPrice: Number(line.sellPrice) || undefined,
-            notes: multiNotes || undefined,
-            receivedAt: new Date(multiDate).toISOString(),
-            deliveryId,
-          })
-        }
+    const validLines = receiveLines.filter(
+      l => l.productName.trim() && Number(l.costPrice) > 0 && Number(l.quantity) > 0
+    )
+    if (validLines.length === 0) return
+
+    const items: ReceiveLineItem[] = validLines.map(l => {
+      const imeis = l.imeisText
+        .split(/[\n,]+/)
+        .map(s => s.trim())
+        .filter(Boolean)
+      return {
+        productName: l.productName.trim(),
+        productBrand: l.productBrand.trim() || 'Unknown',
+        productCategory: l.productCategory,
+        ...(l.hasVariant ? {
+          storage: l.storage || undefined,
+          color: l.color || undefined,
+          ram: l.ram || undefined,
+          condition: l.condition,
+        } : {}),
+        quantity: Number(l.quantity),
+        costPrice: Number(l.costPrice),
+        sellPrice: Number(l.sellPrice) || undefined,
+        imeis: imeis.length > 0 ? imeis : undefined,
+        notes: l.imeisText ? undefined : undefined,
       }
-      toast.success(`Delivery received — ${itemCount} item${itemCount !== 1 ? 's' : ''}, ${totalUnitsToReceive} units`)
-      setIsMultiOpen(false)
-    } catch {
-      toast.error('Failed to receive batch')
-    } finally {
-      setIsSubmittingMulti(false)
+    })
+
+    try {
+      // Auto-create supplier if the typed name doesn't exist yet
+      if (receiveSupplier.trim()) await ensureSupplier(receiveSupplier.trim())
+
+      const result = await receive({
+        supplier: receiveSupplier.trim() || undefined,
+        receivedAt: receiveDate,
+        notes: receiveNotes || undefined,
+        receiveType: receiveMode,
+        items,
+      })
+      const newLabel = result.productCount > 0
+        ? ` · ${result.productCount} new product${result.productCount !== 1 ? 's' : ''} created`
+        : ''
+      toast.success(`Stock received — ${result.itemCount} item${result.itemCount !== 1 ? 's' : ''}, ${receiveTotalUnits} units${newLabel}`)
+      setIsReceiveOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to receive stock')
     }
   }
 
@@ -438,10 +490,16 @@ export const Batches: React.FC = () => {
             <FileSpreadsheet size={15} /> Import Excel
           </button>
           <button
-            onClick={openMultiModal}
+            onClick={() => openReceiveModal('single')}
+            className="flex items-center gap-2 h-10 px-4 bg-white border border-border text-navy rounded-xl font-bold text-[13px] hover:bg-gray-50 transition-colors"
+          >
+            <PackagePlus size={15} /> Single Unit
+          </button>
+          <button
+            onClick={() => openReceiveModal('batch')}
             className="flex items-center gap-2 h-10 px-4 bg-primary text-white rounded-xl font-bold text-[13px] hover:bg-primary-dark transition-colors shadow-sm shadow-primary/20"
           >
-            <Plus size={15} /> New Batch
+            <Truck size={15} /> Receive Batch
           </button>
         </div>
       </div>
@@ -736,10 +794,16 @@ export const Batches: React.FC = () => {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                <select value={singleSupplier} onChange={e => setSingleSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none">
-                  <option value="">No supplier</option>
-                  {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                </select>
+                <input
+                  list="single-edit-suppliers-list"
+                  value={singleSupplier}
+                  onChange={e => setSingleSupplier(e.target.value)}
+                  placeholder="Type or pick a supplier…"
+                  className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[14px] focus:border-primary outline-none"
+                />
+                <datalist id="single-edit-suppliers-list">
+                  {suppliers.map(s => <option key={s.name} value={s.name} />)}
+                </datalist>
               </div>
 
               <div className="space-y-1.5">
@@ -794,10 +858,16 @@ export const Batches: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                      <select value={editDeliverySupplier} onChange={e => setEditDeliverySupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none">
-                        <option value="">No supplier</option>
-                        {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                      </select>
+                      <input
+                        list="delivery-edit-suppliers-list"
+                        value={editDeliverySupplier}
+                        onChange={e => setEditDeliverySupplier(e.target.value)}
+                        placeholder="Type or pick a supplier…"
+                        className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none"
+                      />
+                      <datalist id="delivery-edit-suppliers-list">
+                        {suppliers.map(s => <option key={s.name} value={s.name} />)}
+                      </datalist>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
@@ -1064,235 +1134,272 @@ export const Batches: React.FC = () => {
         />
       )}
 
-      {/* Multi-product Batch Receive Modal */}
-      {isMultiOpen && (
+      {/* Receive Stock Modal (batch + single) */}
+      {isReceiveOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setIsMultiOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[680px] max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+          <div className="absolute inset-0 bg-navy/50 backdrop-blur-sm" onClick={() => setIsReceiveOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[700px] max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
             <div className="h-1 w-full bg-primary shrink-0" />
 
             {/* Header */}
             <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
               <div>
-                <h3 className="text-[17px] font-bold text-navy">New Batch Delivery</h3>
-                <p className="text-[12px] text-gray mt-0.5">All items below will be grouped as one delivery</p>
+                <h3 className="text-[17px] font-bold text-navy">Receive Stock</h3>
+                <p className="text-[12px] text-gray mt-0.5">
+                  {receiveMode === 'batch'
+                    ? 'Log a delivery — describe each item, new products are created automatically'
+                    : 'Log a single unit purchase'}
+                </p>
               </div>
-              <button onClick={() => setIsMultiOpen(false)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={() => setIsReceiveOpen(false)} className="p-1.5 text-gray hover:text-navy hover:bg-gray-100 rounded-lg transition-colors">
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleMultiSubmit} className="flex flex-col flex-1 overflow-hidden">
-              {/* Common delivery fields */}
-              <div className="px-6 py-4 border-b border-border shrink-0">
+            <form onSubmit={handleReceiveSubmit} className="flex flex-col flex-1 overflow-hidden">
+              {/* Mode toggle + delivery fields */}
+              <div className="px-6 py-4 border-b border-border shrink-0 space-y-4">
+                {/* Mode toggle */}
+                <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                  {(['batch', 'single'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setReceiveMode(m)
+                        if (m === 'single') {
+                          setReceiveLines([{ ...blankReceiveLine(lineCounter), quantity: '1' }])
+                          setLineCounter(c => c + 1)
+                        }
+                      }}
+                      className={cn(
+                        'px-4 py-1.5 rounded-lg text-[12px] font-bold capitalize transition-all',
+                        receiveMode === m ? 'bg-white text-navy shadow-sm' : 'text-gray hover:text-navy'
+                      )}
+                    >
+                      {m === 'batch' ? '📦 Batch Delivery' : '🔹 Single Unit'}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Supplier</label>
-                    <select value={multiSupplier} onChange={e => setMultiSupplier(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none">
-                      <option value="">Select supplier…</option>
-                      {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                    </select>
+                    <input
+                      list="receive-suppliers-list"
+                      value={receiveSupplier}
+                      onChange={e => setReceiveSupplier(e.target.value)}
+                      placeholder="Type or pick a supplier…"
+                      className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none"
+                    />
+                    <datalist id="receive-suppliers-list">
+                      {suppliers.map(s => <option key={s.name} value={s.name} />)}
+                    </datalist>
+                    {receiveSupplier.trim() && !suppliers.some(s => s.name.toLowerCase() === receiveSupplier.trim().toLowerCase()) && (
+                      <p className="text-[11px] text-emerald-600 font-medium">New supplier — will be created automatically</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Date Received</label>
-                    <input type="date" required value={multiDate} onChange={e => setMultiDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                    <input type="date" required value={receiveDate} onChange={e => setReceiveDate(e.target.value)} className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
                   </div>
                   <div className="space-y-1.5 col-span-2">
-                    <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes <span className="text-gray/40 normal-case font-normal">(applies to whole delivery)</span></label>
-                    <input value={multiNotes} onChange={e => setMultiNotes(e.target.value)} placeholder="e.g. March shipment from Alaba market…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
+                    <label className="text-[11px] font-bold text-navy uppercase tracking-wider">Notes <span className="text-gray/40 normal-case font-normal">(optional)</span></label>
+                    <input value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="e.g. March shipment from Alaba market…" className="w-full h-10 px-3 bg-gray-50 border border-border rounded-xl text-[13px] focus:border-primary outline-none" />
                   </div>
                 </div>
               </div>
 
-              {/* Line items — scrollable */}
+              {/* Line items */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 no-scrollbar">
-                <p className="text-[11px] font-bold text-gray uppercase tracking-wider mb-1">Items in this delivery</p>
+                <p className="text-[11px] font-bold text-gray uppercase tracking-wider">
+                  {receiveMode === 'batch' ? 'Items in this delivery' : 'Unit details'}
+                </p>
 
-                {lineItems.map((line, idx) => {
-                  const isVariantProduct = line.variantLines.length > 0
+                {receiveLines.map((line, idx) => {
+                  const imeiList = line.imeisText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+                  const imeiCountMismatch = imeiList.length > 0 && imeiList.length !== Number(line.quantity)
+                  const margin = Number(line.costPrice) > 0 && Number(line.sellPrice) > 0
+                    ? (((Number(line.sellPrice) - Number(line.costPrice)) / Number(line.sellPrice)) * 100).toFixed(1)
+                    : null
 
                   return (
                     <div key={line.key} className="bg-gray-50 border border-border rounded-xl overflow-hidden">
-                      {/* Card header: item number + product selector + remove */}
-                      <div className="flex items-center gap-2 p-3 border-b border-gray-100">
-                        <span className="text-[10px] font-bold text-gray/40 uppercase tracking-widest w-10 shrink-0">#{idx + 1}</span>
-                        <select
-                          value={line.productId}
-                          onChange={e => selectProduct(line.key, e.target.value, products)}
-                          className="flex-1 h-9 px-3 bg-white border border-border rounded-lg text-[13px] focus:border-primary outline-none"
-                        >
-                          <option value="">Select product…</option>
-                          {products.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                        {lineItems.length > 1 && (
-                          <button type="button" onClick={() => removeLine(line.key)} className="p-1.5 text-gray/40 hover:text-red-500 rounded-lg transition-colors shrink-0">
+                      {/* Line header */}
+                      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 bg-white">
+                        {receiveMode === 'batch' && (
+                          <span className="text-[10px] font-bold text-gray/40 uppercase tracking-widest w-8 shrink-0">#{idx + 1}</span>
+                        )}
+                        <div className="flex-1">
+                          <ProductSearch
+                            products={products}
+                            value={line.searchText}
+                            onChange={text => updateLine(line.key, 'searchText', text)}
+                            onSelect={match => handleProductSelect(line.key, match, line.searchText)}
+                          />
+                        </div>
+                        {receiveMode === 'batch' && receiveLines.length > 1 && (
+                          <button type="button" onClick={() => removeReceiveLine(line.key)} className="p-1.5 text-gray/40 hover:text-red-500 rounded-lg transition-colors shrink-0">
                             <X size={14} />
                           </button>
                         )}
                       </div>
 
-                      {/* Variant product */}
-                      {isVariantProduct && (() => {
-                        const prod = products.find(p => p.id === line.productId)
-                        const pvariants = prod?.variants || []
-                        const dim: 'storage' | 'ram' | null =
-                          pvariants.some(v => v.storage) ? 'storage' :
-                          pvariants.some(v => v.ram) ? 'ram' : null
-                        const getDimVal = (v: typeof pvariants[0]) =>
-                          dim === 'storage' ? v.storage : dim === 'ram' ? v.ram : undefined
-                        const groups = dim
-                          ? [...new Set(pvariants.map(getDimVal).filter(Boolean))] as string[]
-                          : []
-
-                        return (
-                          <div className="divide-y divide-gray-100">
-                            {/* Price group setters */}
-                            {groups.length > 0 && (
-                              <div className="px-3 py-3 bg-primary/5 space-y-2">
-                                <p className="text-[10px] font-bold text-primary uppercase tracking-wider">
-                                  Set price by {dim}
-                                </p>
-                                <div className="grid grid-cols-[70px_1fr_1fr] gap-2 px-0.5">
-                                  <span className="text-[9px] font-bold text-gray/40 uppercase">{dim}</span>
-                                  <span className="text-[9px] font-bold text-gray/40 uppercase">Cost ₦</span>
-                                  <span className="text-[9px] font-bold text-gray/40 uppercase">Sell ₦</span>
-                                </div>
-                                {groups.map(group => {
-                                  const ids = pvariants.filter(v => getDimVal(v) === group).map(v => v.id)
-                                  return (
-                                    <div key={group} className="grid grid-cols-[70px_1fr_1fr] gap-2 items-center">
-                                      <span className="text-[13px] font-bold text-navy">{group}</span>
-                                      <input
-                                        type="number" min={0} placeholder="Cost"
-                                        className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-white"
-                                        onChange={e => { if (e.target.value) ids.forEach(id => updateVariantLine(line.key, id, 'costPrice', e.target.value)) }}
-                                      />
-                                      <input
-                                        type="number" min={0} placeholder="Sell"
-                                        className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-white"
-                                        onChange={e => { if (e.target.value) ids.forEach(id => updateVariantLine(line.key, id, 'sellPrice', e.target.value)) }}
-                                      />
-                                    </div>
-                                  )
-                                })}
+                      {line.productName ? (
+                        <div className="p-3 space-y-3">
+                          {/* New product — needs brand + category */}
+                          {line.isNewProduct && !line.matchedProductId && (
+                            <div className="grid grid-cols-2 gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                              <div className="col-span-2 flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">New product — fill details</span>
                               </div>
-                            )}
-
-                            {/* Column headers */}
-                            <div className="grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-1.5 bg-gray-100/60">
-                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Variant</span>
-                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Qty</span>
-                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Cost ₦</span>
-                              <span className="text-[9px] font-bold text-gray/50 uppercase tracking-widest">Sell ₦</span>
-                            </div>
-
-                            {/* Per-variant qty + override */}
-                            {line.variantLines.map(vl => (
-                              <div key={vl.variantId} className={cn('grid grid-cols-[1fr_80px_110px_110px] gap-2 px-3 py-2 items-center', Number(vl.quantity) > 0 ? 'bg-white' : '')}>
-                                <span className="text-[12px] font-semibold text-navy truncate">{vl.label}</span>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">Brand</label>
                                 <input
-                                  type="number" min={0} value={vl.quantity}
-                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'quantity', e.target.value)}
-                                  placeholder="0"
-                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-center focus:border-primary outline-none bg-gray-50"
-                                />
-                                <input
-                                  type="number" min={0} value={vl.costPrice}
-                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'costPrice', e.target.value)}
-                                  placeholder="Cost"
-                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-orange-600 focus:border-primary outline-none bg-gray-50"
-                                />
-                                <input
-                                  type="number" min={0} value={vl.sellPrice}
-                                  onChange={e => updateVariantLine(line.key, vl.variantId, 'sellPrice', e.target.value)}
-                                  placeholder="Sell"
-                                  className="w-full h-8 px-2 border border-border rounded-lg text-[12px] font-bold text-primary focus:border-primary outline-none bg-gray-50"
+                                  value={line.productBrand}
+                                  onChange={e => updateLine(line.key, 'productBrand', e.target.value)}
+                                  placeholder="e.g. Samsung"
+                                  className="w-full h-8 px-2 border border-emerald-200 bg-white rounded-lg text-[12px] focus:border-primary outline-none"
                                 />
                               </div>
-                            ))}
-
-                            <div className="px-3 py-1.5 bg-gray-50 flex items-center gap-3">
-                              <span className="text-[10px] text-gray/40 italic">Leave qty at 0 to skip a variant</span>
-                              {line.variantLines.some(vl => Number(vl.quantity) > 0) && (
-                                <span className="text-[10px] font-bold text-primary ml-auto">
-                                  {line.variantLines.reduce((s, vl) => s + (Number(vl.quantity) || 0), 0)} units total
-                                </span>
-                              )}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">Category</label>
+                                <select
+                                  value={line.productCategory}
+                                  onChange={e => updateLine(line.key, 'productCategory', e.target.value as Product['category'])}
+                                  className="w-full h-8 px-2 border border-emerald-200 bg-white rounded-lg text-[12px] focus:border-primary outline-none"
+                                >
+                                  {(['Phones', 'Laptops', 'Tablets', 'Accessories'] as const).map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
-                          </div>
-                        )
-                      })()}
+                          )}
 
-                      {/* Simple product */}
-                      {!isVariantProduct && line.productId && (
-                        <div className="p-3 space-y-2">
+                          {/* Variant toggle */}
+                          <label className="flex items-center gap-2 cursor-pointer w-fit">
+                            <input
+                              type="checkbox"
+                              checked={line.hasVariant}
+                              onChange={e => updateLine(line.key, 'hasVariant', e.target.checked)}
+                              className="rounded accent-primary"
+                            />
+                            <span className="text-[12px] font-semibold text-navy">Has variant (storage / color / RAM)</span>
+                          </label>
+
+                          {/* Variant fields */}
+                          {line.hasVariant && (
+                            <div className="grid grid-cols-4 gap-2 p-2.5 bg-primary/5 border border-primary/15 rounded-lg">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">Storage</label>
+                                <input value={line.storage} onChange={e => updateLine(line.key, 'storage', e.target.value)} placeholder="128GB" className="w-full h-8 px-2 border border-border bg-white rounded-lg text-[12px] focus:border-primary outline-none" />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">Color</label>
+                                <input value={line.color} onChange={e => updateLine(line.key, 'color', e.target.value)} placeholder="Black" className="w-full h-8 px-2 border border-border bg-white rounded-lg text-[12px] focus:border-primary outline-none" />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">RAM</label>
+                                <input value={line.ram} onChange={e => updateLine(line.key, 'ram', e.target.value)} placeholder="8GB" className="w-full h-8 px-2 border border-border bg-white rounded-lg text-[12px] focus:border-primary outline-none" />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray/60 uppercase">Condition</label>
+                                <select value={line.condition} onChange={e => updateLine(line.key, 'condition', e.target.value as 'New' | 'Open Box' | 'Pre-owned')} className="w-full h-8 px-2 border border-border bg-white rounded-lg text-[12px] focus:border-primary outline-none">
+                                  <option>New</option>
+                                  <option>Open Box</option>
+                                  <option>Pre-owned</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Pricing row */}
                           <div className="grid grid-cols-3 gap-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Qty</label>
-                              <input type="number" min={1} value={line.quantity}
-                                onChange={e => updateLineField(line.key, 'quantity', e.target.value)}
-                                className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold focus:border-primary outline-none" />
+                              <label className="text-[10px] font-bold text-gray/60 uppercase">Qty</label>
+                              <input
+                                type="number" min={receiveMode === 'single' ? 1 : 0}
+                                value={line.quantity}
+                                readOnly={receiveMode === 'single'}
+                                onChange={e => updateLine(line.key, 'quantity', e.target.value)}
+                                className={cn('w-full h-9 px-3 border border-border rounded-lg text-[13px] font-bold focus:border-primary outline-none', receiveMode === 'single' ? 'bg-gray-100 text-gray cursor-not-allowed' : 'bg-white')}
+                              />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Cost ₦</label>
-                              <input type="number" min={0} value={line.costPrice}
-                                onChange={e => updateLineField(line.key, 'costPrice', e.target.value)}
-                                placeholder="0"
-                                className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-orange-600 focus:border-primary outline-none" />
+                              <label className="text-[10px] font-bold text-gray/60 uppercase">Cost ₦</label>
+                              <input type="number" min={0} value={line.costPrice} onChange={e => updateLine(line.key, 'costPrice', e.target.value)} placeholder="0" className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-orange-600 focus:border-primary outline-none" />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-gray/50 uppercase tracking-wide">Sell ₦</label>
-                              <input type="number" min={0} value={line.sellPrice}
-                                onChange={e => updateLineField(line.key, 'sellPrice', e.target.value)}
-                                placeholder="0"
-                                className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-primary focus:border-primary outline-none" />
+                              <label className="text-[10px] font-bold text-gray/60 uppercase">Sell ₦</label>
+                              <input type="number" min={0} value={line.sellPrice} onChange={e => updateLine(line.key, 'sellPrice', e.target.value)} placeholder="0" className="w-full h-9 px-3 bg-white border border-border rounded-lg text-[13px] font-bold text-primary focus:border-primary outline-none" />
                             </div>
                           </div>
-                          {line.costPrice && line.sellPrice && Number(line.costPrice) > 0 && Number(line.sellPrice) > 0 && (
+
+                          {margin && (
                             <p className="text-[10px] text-emerald-600 font-bold">
-                              {(((Number(line.sellPrice) - Number(line.costPrice)) / Number(line.sellPrice)) * 100).toFixed(1)}% margin · {formatNaira(Number(line.sellPrice) - Number(line.costPrice))}/unit
+                              {margin}% margin · {formatNaira(Number(line.sellPrice) - Number(line.costPrice))}/unit
                             </p>
                           )}
-                        </div>
-                      )}
 
-                      {/* Placeholder when no product selected */}
-                      {!isVariantProduct && !line.productId && (
+                          {/* IMEI field */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray/60 uppercase">
+                              IMEI / Serial numbers <span className="normal-case font-normal text-gray/40">(optional — one per line or comma-separated)</span>
+                            </label>
+                            <textarea
+                              value={line.imeisText}
+                              onChange={e => updateLine(line.key, 'imeisText', e.target.value)}
+                              placeholder={receiveMode === 'single' ? 'Paste IMEI here…' : 'Paste IMEIs here, one per line…'}
+                              rows={receiveMode === 'single' ? 1 : 2}
+                              className="w-full px-3 py-2 bg-white border border-border rounded-lg text-[12px] focus:border-primary outline-none resize-none font-mono"
+                            />
+                            {imeiList.length > 0 && (
+                              <p className={cn('text-[10px] font-bold', imeiCountMismatch ? 'text-amber-600' : 'text-emerald-600')}>
+                                {imeiList.length} IMEI{imeiList.length !== 1 ? 's' : ''} entered
+                                {imeiCountMismatch ? ` · qty is ${line.quantity} — counts don't match` : ' ✓'}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
                         <div className="flex items-center gap-2 px-3 py-4 text-gray/30">
                           <Package size={14} />
-                          <span className="text-[12px] italic">Select a product above</span>
+                          <span className="text-[12px] italic">Search for a product or type a new name above</span>
                         </div>
                       )}
                     </div>
                   )
                 })}
 
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="w-full h-10 border-2 border-dashed border-border rounded-xl text-[13px] font-bold text-gray/50 hover:text-primary hover:border-primary transition-colors flex items-center justify-center gap-2"
-                >
-                  <Plus size={14} /> Add another product
-                </button>
+                {receiveMode === 'batch' && (
+                  <button
+                    type="button"
+                    onClick={addReceiveLine}
+                    className="w-full h-10 border-2 border-dashed border-border rounded-xl text-[13px] font-bold text-gray/50 hover:text-primary hover:border-primary transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={14} /> Add another item
+                  </button>
+                )}
               </div>
 
               {/* Footer */}
               <div className="px-6 py-4 border-t border-border flex items-center gap-3 shrink-0">
                 <div className="flex-1">
-                  <p className="text-[12px] font-bold text-navy">1 delivery · {itemCount} item{itemCount !== 1 ? 's' : ''} · {totalUnitsToReceive} units</p>
-                  {multiSupplier && <p className="text-[11px] text-gray/50">{multiSupplier}</p>}
+                  <p className="text-[12px] font-bold text-navy">
+                    {receiveReadyCount} item{receiveReadyCount !== 1 ? 's' : ''} · {receiveTotalUnits} units
+                  </p>
+                  {receiveSupplier && <p className="text-[11px] text-gray/50">{receiveSupplier}</p>}
                 </div>
-                <button type="button" onClick={() => setIsMultiOpen(false)} className="h-11 px-5 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">
+                <button type="button" onClick={() => setIsReceiveOpen(false)} className="h-11 px-5 border border-border bg-white text-navy rounded-xl font-bold text-[14px] hover:bg-gray-50 transition-colors">
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingMulti || itemCount === 0}
+                  disabled={isReceiving || receiveReadyCount === 0}
                   className="h-11 px-6 bg-primary text-white rounded-xl font-bold text-[14px] hover:bg-primary-dark disabled:opacity-50 transition-colors shadow-lg shadow-primary/20"
                 >
-                  {isSubmittingMulti ? 'Receiving…' : 'Receive Delivery'}
+                  {isReceiving ? 'Receiving…' : 'Receive Stock'}
                 </button>
               </div>
             </form>

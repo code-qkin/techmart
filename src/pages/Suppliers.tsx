@@ -112,7 +112,10 @@ export const Suppliers: React.FC = () => {
     const name = form.name.trim()
     if (!name) return
 
-    if (!editingName && suppliers.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+    const nameConflict = suppliers.some(
+      s => s.name.toLowerCase() === name.toLowerCase() && s.name !== editingName
+    )
+    if (nameConflict) {
       toast.error('A supplier with that name already exists')
       return
     }
@@ -120,8 +123,8 @@ export const Suppliers: React.FC = () => {
     setSaving(true)
     try {
       if (editingName) {
-        await updateSupplier({ ...form, name: editingName })
-        toast.success('Supplier updated')
+        await updateSupplier({ oldName: editingName, supplier: { ...form, name } })
+        toast.success(name !== editingName ? `Renamed to "${name}"` : 'Supplier updated')
       } else {
         await addSupplier({ ...form, name })
         toast.success(`"${name}" added`)
@@ -510,18 +513,17 @@ export const Suppliers: React.FC = () => {
                 <label className="text-[11px] font-bold text-gray/50 uppercase tracking-widest block mb-1.5">
                   Supplier Name <span className="text-red-400">*</span>
                 </label>
-                {editingName ? (
-                  <div className="h-11 px-4 border border-border rounded-xl bg-gray-50 flex items-center text-[14px] font-bold text-navy">
-                    {editingName}
-                  </div>
-                ) : (
-                  <input
+                <input
                     autoFocus
                     placeholder="e.g. Samsung Nigeria"
                     className="w-full h-11 px-4 border border-border rounded-xl text-[14px] focus:outline-none focus:border-primary transition-colors"
                     {...field('name')}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
                   />
+                {editingName && form.name.trim() !== editingName && (
+                  <p className="text-[11px] text-amber-600 font-medium mt-1">
+                    Renaming will update all batches and products linked to "{editingName}"
+                  </p>
                 )}
               </div>
 

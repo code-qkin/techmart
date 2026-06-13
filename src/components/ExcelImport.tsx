@@ -282,8 +282,43 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
     setImportProgress(0)
     setImportedImeis(0)
 
+    // Wake up the Supabase project before starting — free tier sleeps after inactivity
+    // and the first request times out. A cheap SELECT here absorbs the cold-start delay.
+    try {
+      await supabase.from('products').select('id').limit(1)
+    } catch {
+      // ignore — if even this fails the loop errors will surface it
+    }
+
+    // Auto-create any supplier names from the file that don't exist yet
+    const uniqueSuppliers = [...new Set(
+      preview.flatMap(g => g.rows.map(r => r.supplier)).filter(Boolean) as string[]
+    )]
+    if (uniqueSuppliers.length > 0) {
+      await supabase.from('suppliers').upsert(
+        uniqueSuppliers.map(name => ({ name })),
+        { onConflict: 'name', ignoreDuplicates: true }
+      )
+    }
+
     const deliveryId = crypto.randomUUID()
     let totalImeiCount = 0
+
+    const withRetry = async <T,>(fn: () => Promise<T>, label: string): Promise<T> => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          return await fn()
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (attempt < 3 && msg.toLowerCase().includes('failed to fetch')) {
+            await new Promise(r => setTimeout(r, 1200 * attempt))
+            continue
+          }
+          throw new Error(`"${label}": ${msg}`)
+        }
+      }
+      throw new Error(`"${label}": max retries exceeded`)
+    }
 
     try {
       for (let gi = 0; gi < preview.length; gi++) {
@@ -311,21 +346,23 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
           }
 
           const maxSell = Math.max(...group.rows.map(r => r.sellPrice || 0), 0)
-          const { data, error } = await supabase.from('products').insert({
-            name: group.productName,
-            brand: group.brand || 'Unknown',
-            category: group.category,
-            emoji: '📦',
-            price: maxSell,
-            cost_price: group.rows[0]?.costPrice || null,
-            stock: 0,
-            low_stock_threshold: 5,
-            variants: finalVariants,
-            supplier: group.rows[0]?.supplier || null,
-          }).select().single()
-
-          if (error) throw new Error(`"${group.productName}": ${error.message}`)
-          productId = (data as Record<string, unknown>).id as string
+          const insertedProduct = await withRetry(async () => {
+            const { data, error } = await supabase.from('products').insert({
+              name: group.productName,
+              brand: group.brand || 'Unknown',
+              category: group.category,
+              emoji: '📦',
+              price: maxSell,
+              cost_price: group.rows[0]?.costPrice || null,
+              stock: 0,
+              low_stock_threshold: 5,
+              variants: finalVariants,
+              supplier: group.rows[0]?.supplier || null,
+            }).select().single()
+            if (error) throw new Error(error.message)
+            return data as Record<string, unknown>
+          }, group.productName)
+          productId = insertedProduct.id as string
 
         } else {
           productId = group.existingProduct!.id
@@ -347,8 +384,10 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
                 costPrice: row.costPrice,
               })
             }
-            const { error } = await supabase.from('products').update({ variants: finalVariants }).eq('id', productId)
-            if (error) throw new Error(`"${group.productName}" variant update: ${error.message}`)
+            await withRetry(async () => {
+              const { error } = await supabase.from('products').update({ variants: finalVariants }).eq('id', productId)
+              if (error) throw new Error(error.message)
+            }, `${group.productName} variant update`)
           }
         }
 
@@ -373,8 +412,10 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
           }))
 
         if (batchInserts.length > 0) {
-          const { error } = await supabase.from('batches').insert(batchInserts)
-          if (error) throw new Error(`"${group.productName}" batch insert: ${error.message}`)
+          await withRetry(async () => {
+            const { error } = await supabase.from('batches').insert(batchInserts)
+            if (error) throw new Error(error.message)
+          }, `${group.productName} batch insert`)
         }
 
         // Stock + units update — work from finalVariants in memory (no re-fetch)
@@ -410,22 +451,26 @@ export const ExcelImport: React.FC<ExcelImportProps> = ({ products, onClose }) =
 
 
           const total = updatedVariants.reduce((s, v) => s + v.stock, 0)
-          const { error: stockErr } = await supabase.from('products').update({
-            variants: updatedVariants,
-            stock: total,
-            stock_updated_at: new Date().toISOString(),
-          }).eq('id', productId)
-          if (stockErr) throw new Error(`"${group.productName}" stock update: ${stockErr.message}`)
-        } else {
-          const totalQty = group.rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0)
-          const { data: prod } = await supabase.from('products').select('stock').eq('id', productId).single()
-          if (prod) {
+          await withRetry(async () => {
             const { error: stockErr } = await supabase.from('products').update({
-              stock: (prod as Record<string, unknown>).stock as number + totalQty,
+              variants: updatedVariants,
+              stock: total,
               stock_updated_at: new Date().toISOString(),
             }).eq('id', productId)
-            if (stockErr) throw new Error(`"${group.productName}" stock update: ${stockErr.message}`)
-          }
+            if (stockErr) throw new Error(stockErr.message)
+          }, `${group.productName} stock update`)
+        } else {
+          const totalQty = group.rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0)
+          await withRetry(async () => {
+            const { data: prod } = await supabase.from('products').select('stock').eq('id', productId).single()
+            if (prod) {
+              const { error: stockErr } = await supabase.from('products').update({
+                stock: (prod as Record<string, unknown>).stock as number + totalQty,
+                stock_updated_at: new Date().toISOString(),
+              }).eq('id', productId)
+              if (stockErr) throw new Error(stockErr.message)
+            }
+          }, `${group.productName} stock update`)
         }
 
         setImportProgress(gi + 1)
