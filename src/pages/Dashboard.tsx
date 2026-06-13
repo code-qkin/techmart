@@ -65,7 +65,7 @@ export const Dashboard: React.FC = () => {
   }
 
   const salesOrders = useMemo(() =>
-    orders.filter((o) => (o.status === 'Completed' || o.status === 'Processing') && inRange(o.createdAt)),
+    orders.filter((o) => inRange(o.createdAt)),
     [orders, dateFilter]
   )
 
@@ -85,7 +85,7 @@ export const Dashboard: React.FC = () => {
       return Array.from({ length: 24 }, (_, h) => {
         const revenue = orders
           .filter((o) => {
-            if (o.status !== 'Completed' && o.status !== 'Processing') return false
+            if (!o.status) return false
             const t = new Date(o.createdAt)
             return t.toDateString() === now.toDateString() && t.getHours() === h
           })
@@ -103,7 +103,7 @@ export const Dashboard: React.FC = () => {
         const next = new Date(d); next.setDate(d.getDate() + 1)
         const revenue = orders
           .filter((o) => {
-            if (o.status !== 'Completed' && o.status !== 'Processing') return false
+            if (!o.status) return false
             const t = new Date(o.createdAt)
             return t >= d && t < next
           })
@@ -120,7 +120,7 @@ export const Dashboard: React.FC = () => {
         const next = new Date(d); next.setDate(d.getDate() + 1)
         const revenue = orders
           .filter((o) => {
-            if (o.status !== 'Completed' && o.status !== 'Processing') return false
+            if (!o.status) return false
             const t = new Date(o.createdAt)
             return t >= d && t < next
           })
@@ -222,7 +222,7 @@ export const Dashboard: React.FC = () => {
         <StatCard
           label={`Orders — ${DATE_FILTER_LABELS[dateFilter]}`}
           value={String(filteredOrderCount)}
-          change={filteredOrderCount > 0 ? 'Completed / Processing' : 'No orders yet'}
+          change={filteredOrderCount > 0 ? 'All statuses' : 'No orders yet'}
           changeType={filteredOrderCount > 0 ? 'up' : 'down'}
           icon={ShoppingBag}
           iconBg="green"
